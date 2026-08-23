@@ -47,20 +47,38 @@ export async function initDatabaseOptimizations(): Promise<void> {
         );
       `);
 
-      // Check FTS population
+      // 4. Triggers to maintain FTS5 in exact sync
+      await prisma.$executeRawUnsafe(`
+        CREATE TRIGGER IF NOT EXISTS movie_ai AFTER INSERT ON Movie BEGIN
+          INSERT INTO movie_fts(id, name, origin_name, slug) VALUES (new.id, new.name, coalesce(new.origin_name, ''), new.slug);
+        END;
+      `);
+      await prisma.$executeRawUnsafe(`
+        CREATE TRIGGER IF NOT EXISTS movie_ad AFTER DELETE ON Movie BEGIN
+          DELETE FROM movie_fts WHERE id = old.id;
+        END;
+      `);
+      await prisma.$executeRawUnsafe(`
+        CREATE TRIGGER IF NOT EXISTS movie_au AFTER UPDATE ON Movie BEGIN
+          DELETE FROM movie_fts WHERE id = old.id;
+          INSERT INTO movie_fts(id, name, origin_name, slug) VALUES (new.id, new.name, coalesce(new.origin_name, ''), new.slug);
+        END;
+      `);
+
+      // Check FTS population and deduplicate if count differs
       const ftsCountRes: any = await prisma.$queryRawUnsafe(`SELECT count(*) as count FROM movie_fts;`);
       const ftsCount = Number(ftsCountRes[0]?.count || 0);
       const movieCount = await prisma.movie.count();
 
-      if (ftsCount < movieCount) {
-        console.log(`[FTS5] Initializing / Syncing search index (${ftsCount} / ${movieCount} movies)...`);
+      if (ftsCount !== movieCount) {
+        console.log(`[FTS5] Rebuilding / Syncing search index (${ftsCount} vs ${movieCount} movies)...`);
+        await prisma.$executeRawUnsafe(`DELETE FROM movie_fts;`);
         await prisma.$executeRawUnsafe(`
           INSERT INTO movie_fts(id, name, origin_name, slug)
           SELECT id, name, coalesce(origin_name, ''), slug 
-          FROM Movie 
-          WHERE id NOT IN (SELECT id FROM movie_fts);
+          FROM Movie;
         `);
-        console.log(`✅ [FTS5] Search index initialized with ${movieCount} movies.`);
+        console.log(`✅ [FTS5] Search index rebuilt cleanly with ${movieCount} movies.`);
       }
 
       global.isDbOptimized = true;

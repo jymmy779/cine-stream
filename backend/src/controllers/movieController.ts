@@ -498,7 +498,12 @@ export async function searchMovies(req: Request, res: Response) {
         const andTokens = cleanWords.map((w) => `"${w}"*`).join(" AND ");
         const ftsQuery = cleanWords.length > 1 ? `(${phraseQuery}) OR (${andTokens})` : `"${cleanWords[0]}"*`;
 
-        const countSql = `SELECT count(*) as count FROM movie_fts WHERE movie_fts MATCH ?;`;
+        const countSql = `
+          SELECT count(DISTINCT m.id) as count 
+          FROM movie_fts 
+          JOIN Movie m ON movie_fts.id = m.id 
+          WHERE movie_fts MATCH ?;
+        `;
         const countRes: any = await prisma.$queryRawUnsafe(countSql, ftsQuery);
         const totalItems = Number(countRes[0]?.count || 0);
 
@@ -511,6 +516,7 @@ export async function searchMovies(req: Request, res: Response) {
             FROM movie_fts
             JOIN Movie m ON movie_fts.id = m.id
             WHERE movie_fts MATCH ?
+            GROUP BY m.id
             ORDER BY m.server_modified DESC, m.updated_at DESC, m.view_count DESC
             LIMIT ? OFFSET ?;
           `;

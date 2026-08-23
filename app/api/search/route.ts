@@ -89,17 +89,17 @@ export async function GET(request: NextRequest) {
             apiItems = internalApiData.data?.items || internalApiData.items || [];
         }
 
-        // 6. Gộp kết quả, ưu tiên phim độc quyền xếp trên
-        // Tránh trùng lặp slug (nếu PhimAPI trả về trùng với phim độc quyền)
-        const exclusiveSlugs = new Set(exclusiveItems.map(item => item.slug));
-        const filteredApiItems = apiItems.filter(item => !exclusiveSlugs.has(item.slug));
-
-        let finalItems = [...exclusiveItems, ...filteredApiItems];
-        
-        // Cắt bớt nếu vượt quá limit
-        if (finalItems.length > limit) {
-            finalItems = finalItems.slice(0, limit);
+        // 6. Gộp kết quả, ưu tiên phim độc quyền xếp trên, loại bỏ trùng lặp 100%
+        const seenSlugs = new Set<string>();
+        const uniqueItems: any[] = [];
+        for (const item of [...exclusiveItems, ...apiItems]) {
+            if (item && item.slug && !seenSlugs.has(item.slug)) {
+                seenSlugs.add(item.slug);
+                uniqueItems.push(item);
+            }
         }
+
+        let finalItems = uniqueItems.slice(0, limit);
 
         // Enrich search items with Database
         const { enrichApiDataWithDatabase } = await import("@/app/utils/movieEnricher");
