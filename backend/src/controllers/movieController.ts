@@ -275,6 +275,16 @@ export async function getMovieDetail(req: Request, res: Response) {
       return (a.server_name || "").localeCompare(b.server_name || "", "vi");
     });
 
+    // Tự động đồng bộ trường episode_current của movie theo số tập lớn nhất của Server đứng đầu
+    if (sortedEpisodes.length > 0 && movie.type !== "single") {
+      const topServer = sortedEpisodes[0];
+      const topMaxEp = extractMaxEpisodeNumber(topServer);
+      const cur = (formattedMovie.episode_current || "").toLowerCase();
+      if (topMaxEp > 0 && !cur.includes("hoàn tất") && !cur.includes("full") && !cur.includes("trọn bộ")) {
+        formattedMovie.episode_current = `Tập ${topMaxEp}`;
+      }
+    }
+
     const result = {
       status: true,
       msg: "Thành công",

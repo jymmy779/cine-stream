@@ -452,15 +452,32 @@ export async function upsertMovieDetail(
     const detectedLangs = new Set<string>();
     let maxEpsCount = 0;
 
-    allServers.forEach((srv) => {
+    function extractMaxEpNumber(srv: any): number {
+      if (!srv?.server_data || !Array.isArray(srv.server_data) || srv.server_data.length === 0) return 0;
+      let max = 0;
+      for (const ep of srv.server_data) {
+        const text = `${ep.name || ""} ${ep.slug || ""}`;
+        const matches = text.match(/\d+/g);
+        if (matches) {
+          for (const m of matches) {
+            const n = parseInt(m, 10);
+            if (n > max && n < 100000) max = n;
+          }
+        }
+      }
+      return max > 0 ? max : srv.server_data.length;
+    }
+
+    allServers.forEach((srv: any) => {
       const sNameLower = srv.server_name.toLowerCase();
       if (sNameLower.includes("vietsub")) detectedLangs.add("Vietsub");
       if (sNameLower.includes("thuyết minh")) detectedLangs.add("Thuyết Minh");
       if (sNameLower.includes("lồng tiếng")) detectedLangs.add("Lồng Tiếng");
       if (sNameLower.includes("song ngữ")) detectedLangs.add("Song Ngữ");
 
-      if (srv.server_data.length > maxEpsCount) {
-        maxEpsCount = srv.server_data.length;
+      const srvMax = extractMaxEpNumber(srv);
+      if (srvMax > maxEpsCount) {
+        maxEpsCount = srvMax;
       }
     });
 
@@ -476,7 +493,7 @@ export async function upsertMovieDetail(
 
     if (m.type !== "single" && maxEpsCount > 0) {
       const cur = (m.episode_current || "").toLowerCase();
-      if (!cur.includes("hoàn tất") && !cur.includes("full")) {
+      if (!cur.includes("hoàn tất") && !cur.includes("full") && !cur.includes("trọn bộ")) {
         finalUpdate.episode_current = `Tập ${maxEpsCount}`;
       }
     }

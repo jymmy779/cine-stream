@@ -197,16 +197,15 @@ export const getMovieDetail = cache(async (slug: string, isPreview: boolean = fa
             
             let calculatedEpisodeCurrent = exclusiveMovie.type === "single" ? "Full" : "";
             if (exclusiveMovie.type !== "single") {
+                const topServer = finalEpisodes[0];
+                const maxNum = topServer ? extractMaxEpisodeNumber(topServer) : maxEpisodesCount;
                 const originalString = phimApiData?.movie?.episode_current || exclusiveMovie.episode_current || "";
-                if (maxEpisodesCount > 0) {
-                    const epStr = String(maxEpisodesCount);
-                    const lowerOriginal = originalString.toLowerCase();
-                    
-                    if (lowerOriginal.includes("hoàn tất") || lowerOriginal.includes("trọn bộ") || lowerOriginal.includes("full")) {
-                        calculatedEpisodeCurrent = originalString;
-                    } else {
-                        calculatedEpisodeCurrent = `Tập ${epStr}`;
-                    }
+                const lowerOriginal = originalString.toLowerCase();
+                
+                if (lowerOriginal.includes("hoàn tất") || lowerOriginal.includes("trọn bộ") || lowerOriginal.includes("full")) {
+                    calculatedEpisodeCurrent = originalString;
+                } else if (maxNum > 0) {
+                    calculatedEpisodeCurrent = `Tập ${maxNum}`;
                 } else {
                     calculatedEpisodeCurrent = originalString || "Tập mới";
                 }
@@ -383,6 +382,19 @@ export const getMovieDetail = cache(async (slug: string, isPreview: boolean = fa
                         }
                         return (a.server_name || "").localeCompare(b.server_name || "", "vi");
                     });
+
+                    // Tự động đồng bộ trường episode_current của phim theo số tập lớn nhất của Server đứng đầu
+                    if (phimApiData.episodes.length > 0 && phimApiData.movie) {
+                        const topServer = phimApiData.episodes[0];
+                        const maxEpNum = extractMaxEpisodeNumber(topServer);
+                        const origEpCurrent = (phimApiData.movie.episode_current || "").toLowerCase();
+                        
+                        if (phimApiData.movie.type !== "single" && maxEpNum > 0) {
+                            if (!origEpCurrent.includes("hoàn tất") && !origEpCurrent.includes("full") && !origEpCurrent.includes("trọn bộ")) {
+                                phimApiData.movie.episode_current = `Tập ${maxEpNum}`;
+                            }
+                        }
+                    }
                 }
                 if (!isPreview) {
                     detailMemoryCache.set(cacheKey, { data: phimApiData, expires: Date.now() + 60_000 });
