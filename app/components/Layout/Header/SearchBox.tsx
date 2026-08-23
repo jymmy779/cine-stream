@@ -238,22 +238,60 @@ function SearchBoxInner({ autoFocus }: SearchBoxProps) {
                                                 className="object-cover group-hover:scale-110 transition-transform duration-500"
                                             />
                                         </div>
-                                        <div className="flex flex-col justify-center min-w-0">
+                                        <div className="flex flex-col justify-center min-w-0 flex-1">
                                             <h4 className={`text-[12px] md:text-[13px] font-bold transition-colors truncate leading-tight ${activeIndex === index ? 'text-[#D497FF]' : 'text-white/90 group-hover:text-[#D497FF]'}`}>
                                                 {movie.name}
                                             </h4>
                                             <p className="text-[10px] md:text-[11px] text-white/40 truncate mt-0.5">
                                                 {movie.origin_name}
                                             </p>
-                                            <div className="flex gap-1.5 md:gap-2 mt-1 md:mt-1.5 items-center">
-                                                <span className="text-[8px] md:text-[9px] px-1 md:px-1.5 py-0.5 rounded bg-white/5 border border-white/10 text-white/60 font-medium tracking-wide">
+                                            <div className="flex gap-1.5 md:gap-2 mt-1 md:mt-1.5 items-center flex-nowrap overflow-hidden">
+                                                <span className="text-[8px] md:text-[9px] px-1.5 py-0.5 rounded bg-white/5 border border-white/10 text-white/60 font-medium tracking-wide whitespace-nowrap shrink-0">
                                                     {movie.year || '2025'}
                                                 </span>
-                                                <span className="text-[8px] md:text-[9px] px-1 md:px-1.5 py-0.5 rounded bg-pink-500/10 border border-pink-500/20 text-pink-400 font-bold uppercase">
+                                                <span className="text-[8px] md:text-[9px] px-1.5 py-0.5 rounded bg-pink-500/10 border border-pink-500/20 text-pink-400 font-bold uppercase whitespace-nowrap shrink-0">
                                                     {movie.quality || 'FHD'}
                                                 </span>
-                                                <span className="text-[8px] md:text-[9px] px-1 md:px-1.5 py-0.5 rounded bg-white/5 border border-white/10 text-white/60 font-medium">
-                                                    {movie.episode_current || 'Full'}
+                                                <span className="text-[8px] md:text-[9px] px-1.5 py-0.5 rounded bg-[#D497FF]/10 border border-[#D497FF]/20 text-[#D497FF] font-medium whitespace-nowrap shrink-0">
+                                                    {(() => {
+                                                        const epCurrent = String(movie.episode_current || "").trim();
+                                                        const epTotal = String(movie.episode_total || "").trim();
+                                                        const type = movie.type || "";
+
+                                                        if (type === "single" || epCurrent.toLowerCase() === "full") {
+                                                            return "Full";
+                                                        }
+
+                                                        const isCompleted =
+                                                            epCurrent.toLowerCase().includes("hoàn tất") ||
+                                                            epCurrent.toLowerCase().includes("trọn bộ") ||
+                                                            epCurrent.toLowerCase().includes("full") ||
+                                                            movie.status === "completed";
+
+                                                        const curMatch = epCurrent.match(/\d+/);
+                                                        const totalMatch = epTotal.match(/\d+/);
+                                                        const curNum = curMatch ? curMatch[0] : "";
+                                                        const totalNum = totalMatch ? totalMatch[0] : "";
+
+                                                        if (isCompleted) {
+                                                            if (curNum && totalNum) {
+                                                                return `HT (${curNum}/${totalNum})`;
+                                                            }
+                                                            if (totalNum) {
+                                                                return `HT (${totalNum}/${totalNum})`;
+                                                            }
+                                                            if (curNum) {
+                                                                return `HT (${curNum}/${curNum})`;
+                                                            }
+                                                            return "HT";
+                                                        }
+
+                                                        if (curNum) {
+                                                            return `Tập ${curNum}`;
+                                                        }
+
+                                                        return epCurrent || "Full";
+                                                    })()}
                                                 </span>
                                             </div>
                                         </div>

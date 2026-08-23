@@ -2,20 +2,39 @@ import { prisma } from "../lib/prisma.js";
 import axios from "axios";
 
 async function main() {
-  console.log("?? B?t d?u chu?n h�a Th? lo?i & Qu?c gia chu?n KKPhim + Custom...");
+  console.log("🚀 Bat dau chuan hoa The loai & Quoc gia chuan KKPhim + Custom...");
 
   const [catRes, counRes] = await Promise.all([
     axios.get("https://phimapi.com/v1/api/the-loai"),
     axios.get("https://phimapi.com/v1/api/quoc-gia"),
   ]);
 
-  const standardCategories: { name: string; slug: string }[] = [
-    ...(catRes.data?.data?.items || []),
-    { name: "Ho?t H�nh", slug: "hoat-hinh" }
-  ];
-  const standardCountries: { name: string; slug: string }[] = counRes.data?.data?.items || [];
+  const fetchedCategories: { name: string; slug: string }[] = catRes.data?.data?.items || catRes.data?.items || [];
+  const fetchedCountries: { name: string; slug: string }[] = counRes.data?.data?.items || counRes.data?.items || [];
 
-  console.log(`?? Danh m?c: ${standardCategories.length} th? lo?i v� ${standardCountries.length} qu?c gia chu?n.`);
+  const customCategories = [
+    { name: "Hoạt Hình", slug: "hoat-hinh" },
+    { name: "Giật Gân", slug: "giat-gan" },
+    { name: "Tiên Hiệp", slug: "tien-hiep" },
+    { name: "Thiếu Nhi", slug: "thieu-nhi" },
+  ];
+
+  const catMap = new Map<string, string>();
+  fetchedCategories.forEach(c => catMap.set(c.slug, c.name));
+  customCategories.forEach(c => {
+    if (!catMap.has(c.slug)) catMap.set(c.slug, c.name);
+  });
+
+  const standardCategories: { name: string; slug: string }[] = Array.from(catMap.entries())
+    .filter(([slug]) => slug !== 'tre-em')
+    .map(([slug, name]) => ({
+      slug,
+      name,
+    }));
+
+  const standardCountries: { name: string; slug: string }[] = fetchedCountries;
+
+  console.log(`📌 Danh muc chuan: ${standardCategories.length} the loai va ${standardCountries.length} quoc gia.`);
 
   for (const cat of standardCategories) {
     await prisma.category.upsert({
@@ -33,24 +52,7 @@ async function main() {
     });
   }
 
-  const validCountrySlugs = new Set(standardCountries.map(c => c.slug));
-  const validCategorySlugs = new Set(standardCategories.map(c => c.slug));
-
-  const allDbCountries = await prisma.country.findMany();
-  for (const c of allDbCountries) {
-    if (!validCountrySlugs.has(c.slug)) {
-      await prisma.country.delete({ where: { id: c.id } });
-    }
-  }
-
-  const allDbCategories = await prisma.category.findMany();
-  for (const cat of allDbCategories) {
-    if (!validCategorySlugs.has(cat.slug)) {
-      await prisma.category.delete({ where: { id: cat.id } });
-    }
-  }
-
-  console.log("? Ho�n t?t chu?n h�a taxonomy.");
+  console.log("✅ Hoan tat chuan hoa taxonomy.");
   await prisma.$disconnect();
 }
 

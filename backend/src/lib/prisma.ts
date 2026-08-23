@@ -81,6 +81,47 @@ export async function initDatabaseOptimizations(): Promise<void> {
         console.log(`✅ [FTS5] Search index rebuilt cleanly with ${movieCount} movies.`);
       }
 
+      // 5. Chuẩn hóa danh mục thể loại (Đảm bảo 29 thể loại chuẩn, xóa mục trùng 'tre-em')
+      const standardCategories = [
+        { name: 'Bí Ẩn', slug: 'bi-an' },
+        { name: 'Chiến Tranh', slug: 'chien-tranh' },
+        { name: 'Chính Kịch', slug: 'chinh-kich' },
+        { name: 'Cổ Trang', slug: 'co-trang' },
+        { name: 'Gia Đình', slug: 'gia-dinh' },
+        { name: 'Giật Gân', slug: 'giat-gan' },
+        { name: 'Hoạt Hình', slug: 'hoat-hinh' },
+        { name: 'Hài Hước', slug: 'hai-huoc' },
+        { name: 'Hành Động', slug: 'hanh-dong' },
+        { name: 'Hình Sự', slug: 'hinh-su' },
+        { name: 'Học Đường', slug: 'hoc-duong' },
+        { name: 'Khoa Học', slug: 'khoa-hoc' },
+        { name: 'Kinh Dị', slug: 'kinh-di' },
+        { name: 'Kinh Điển', slug: 'kinh-dien' },
+        { name: 'Lịch Sử', slug: 'lich-su' },
+        { name: 'Miền Tây', slug: 'mien-tay' },
+        { name: 'Phim 18+', slug: 'phim-18' },
+        { name: 'Phim Ngắn', slug: 'phim-ngan' },
+        { name: 'Phiêu Lưu', slug: 'phieu-luu' },
+        { name: 'Thiếu Nhi', slug: 'thieu-nhi' },
+        { name: 'Thần Thoại', slug: 'than-thoai' },
+        { name: 'Thể Thao', slug: 'the-thao' },
+        { name: 'Tiên Hiệp', slug: 'tien-hiep' },
+        { name: 'Tài Liệu', slug: 'tai-lieu' },
+        { name: 'Tâm Lý', slug: 'tam-ly' },
+        { name: 'Tình Cảm', slug: 'tinh-cam' },
+        { name: 'Viễn Tưởng', slug: 'vien-tuong' },
+        { name: 'Võ Thuật', slug: 'vo-thuat' },
+        { name: 'Âm Nhạc', slug: 'am-nhac' },
+      ];
+      await prisma.category.deleteMany({ where: { slug: 'tre-em' } });
+      for (const cat of standardCategories) {
+        await prisma.category.upsert({
+          where: { slug: cat.slug },
+          update: { name: cat.name },
+          create: { name: cat.name, slug: cat.slug },
+        });
+      }
+
       global.isDbOptimized = true;
       console.log("⚡ [Database] SQLite High-Performance Engine (WAL, 128MB Cache, 512MB MMAP, FTS5) Activated.");
     } catch (err: any) {

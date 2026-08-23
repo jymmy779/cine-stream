@@ -34,6 +34,10 @@ export const STANDARD_CATEGORIES: TaxonomyItem[] = [
   { name: "Tiên Hiệp", slug: "tien-hiep" },
   { name: "Phim Ngắn", slug: "phim-ngan" },
   { name: "Thiếu Nhi", slug: "thieu-nhi" },
+  { name: "Kinh Điển", slug: "kinh-dien" },
+  { name: "Lịch Sử", slug: "lich-su" },
+  { name: "Miền Tây", slug: "mien-tay" },
+  { name: "Phim 18+", slug: "phim-18" },
 ];
 
 // ==========================================
@@ -272,7 +276,36 @@ const CATEGORY_MAP: Record<string, TaxonomyItem> = {
   "short-drama": { name: "Phim Ngắn", slug: "phim-ngan" },
   "micro-drama": { name: "Phim Ngắn", slug: "phim-ngan" },
   "tieu-thuyet-chuyen-the": { name: "Phim Ngắn", slug: "phim-ngan" },
-  "kinh-dien": { name: "Tâm Lý", slug: "tam-ly" },
+  
+  // Kinh điển
+  "kinh-dien": { name: "Kinh Điển", slug: "kinh-dien" },
+  "phim-kinh-dien": { name: "Kinh Điển", slug: "kinh-dien" },
+  "kinh dien": { name: "Kinh Điển", slug: "kinh-dien" },
+  "classic": { name: "Kinh Điển", slug: "kinh-dien" },
+  "classics": { name: "Kinh Điển", slug: "kinh-dien" },
+
+  // Lịch sử
+  "lich-su": { name: "Lịch Sử", slug: "lich-su" },
+  "phim-lich-su": { name: "Lịch Sử", slug: "lich-su" },
+  "lich su": { name: "Lịch Sử", slug: "lich-su" },
+  "history": { name: "Lịch Sử", slug: "lich-su" },
+  "historical": { name: "Lịch Sử", slug: "lich-su" },
+
+  // Miền Tây / Viễn Tây
+  "mien-tay": { name: "Miền Tây", slug: "mien-tay" },
+  "phim-mien-tay": { name: "Miền Tây", slug: "mien-tay" },
+  "mien tay": { name: "Miền Tây", slug: "mien-tay" },
+  "western": { name: "Miền Tây", slug: "mien-tay" },
+  "westerns": { name: "Miền Tây", slug: "mien-tay" },
+
+  // Phim 18+
+  "phim-18": { name: "Phim 18+", slug: "phim-18" },
+  "18+": { name: "Phim 18+", slug: "phim-18" },
+  "phim-18+": { name: "Phim 18+", slug: "phim-18" },
+  "phim 18+": { name: "Phim 18+", slug: "phim-18" },
+  "adult": { name: "Phim 18+", slug: "phim-18" },
+  "erotic": { name: "Phim 18+", slug: "phim-18" },
+
   "hu-cau": { name: "Thần Thoại", slug: "than-thoai" },
 };
 

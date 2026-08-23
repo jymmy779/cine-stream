@@ -63,7 +63,7 @@ async function CategoryData({ slug }: { slug: string }) {
     categoryName = categoryName.charAt(0).toUpperCase() + categoryName.slice(1);
 
     try {
-        const res = await fetchWithRedis(`${INTERNAL_API_URL}/the-loai`, { revalidate: 60 });
+        const res = await fetchWithRedis(`${INTERNAL_API_URL}/the-loai`, { revalidate: 300 });
         const categories = (res as any)?.data?.items || (Array.isArray(res) ? res : []);
         const category = categories.find((cat: any) => cat.slug === slug);
         if (category) categoryName = category.name;
@@ -71,20 +71,11 @@ async function CategoryData({ slug }: { slug: string }) {
         console.error("Lỗi fetch tên thể loại:", err);
     }
 
-    let initialData;
-    try {
-        initialData = await fetchCatalogData(
-            `${INTERNAL_API_URL}/the-loai/${slug}`,
-            1,
-            48
-        );
-    } catch (err) {
-        console.error("Lỗi fetch dữ liệu thể loại (có thể không tồn tại):", err);
-    }
-
-    if (!initialData || initialData.movies.length === 0) {
-        notFound();
-    }
+    const initialData = await fetchCatalogData(
+        `${INTERNAL_API_URL}/the-loai/${slug}`,
+        1,
+        48
+    );
 
     return (
         <CategoryClient slug={slug} title={`Danh sách phim ${categoryName}`} initialData={initialData} />
