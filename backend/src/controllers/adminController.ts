@@ -1,61 +1,153 @@
 import { Request, Response } from "express";
 import { prisma } from "../lib/prisma.js";
-import { upsertMovieDetail, syncIncremental } from "../services/syncService.js";
+import {
+  upsertMovieDetail,
+  syncIncremental,
+  syncBulk,
+  pauseBulkSync,
+  loadSyncState,
+  mergeMoviesManually,
+  getSourcePageStats,
+} from "../services/syncService.js";
+import { getCronStatus, toggleCron, recordSyncResult } from "../services/cronService.js";
 
-/**
- * POST /api/v1/admin/movies/import
- * Nh?p phim t? ngu?n ngo�i / th? c�ng v�o Database n?i b?
- */
 export async function importMovie(req: Request, res: Response) {
   try {
     const payload = req.body;
     if (!payload || !payload.movie || !payload.movie.slug) {
       return res.status(400).json({
         status: false,
-        msg: "D? li?u kh�ng h?p l?. Y�u c?u object { movie, episodes }",
+        msg: "Dữ liệu không hợp lệ. Yêu cầu object { movie, episodes }",
       });
     }
 
-    const success = await upsertMovieDetail(payload);
-    if (!success) {
-      return res.status(500).json({ status: false, msg: "L?i luu phim v�o Database" });
+    const result = await upsertMovieDetail(payload, "KK");
+    if (!result.success) {
+      return res.status(500).json({ status: false, msg: "Lỗi lưu phim vào Database" });
     }
 
     return res.json({
       status: true,
-      msg: `�� import phim "${payload.movie.name}" (${payload.movie.slug}) th�nh c�ng!`,
+      msg: `Đã import phim "${payload.movie.name}" (${payload.movie.slug}) thành công!`,
     });
   } catch (error: any) {
-    console.error("[Admin Import] L?i:", error.message);
     return res.status(500).json({ status: false, msg: error.message });
   }
 }
 
-/**
- * POST /api/v1/admin/sync/trigger
- * K�ch ho?t d?ng b? th? c�ng t? KKPhim
- */
-export async function triggerManualSync(req: Request, res: Response) {
+export async function triggerInstantSync(req: Request, res: Response) {
   try {
-    const pages = Number(req.body.pages) || 2;
-    // Ch?y d?ng b? ng?m
-    syncIncremental(pages).catch((err) =>
-      console.error("[Admin Trigger Sync] L?i ng?m:", err.message)
-    );
+    const source = (req.body.source || "all") as "all" | "kkphim" | "vsmov" | "nguonc";
+    const pages = Math.min(10, Math.max(1, Number(req.body.pages) || 2));
+
+    syncIncremental(source, pages)
+      .then((res) => {
+        recordSyncResult(source, res);
+      })
+      .catch((err) =>
+        console.error("[Admin Instant Sync] Lỗi ngầm:", err.message)
+      );
 
     return res.json({
       status: true,
-      msg: `�� k�ch ho?t qu�t ${pages} trang m?i nh?t t? KKPhim. D? li?u dang du?c d?ng b? ng?m.`,
+      msg: `Đã kích hoạt đồng bộ nhanh ${pages} trang mới nhất [Nguồn: ${source.toUpperCase()}].`,
     });
   } catch (error: any) {
     return res.status(500).json({ status: false, msg: error.message });
   }
 }
 
-/**
- * GET /api/v1/admin/sync/logs
- * L?y danh s�ch l?ch s? d?ng b?
- */
+export async function getSyncFullStatus(req: Request, res: Response) {
+  try {
+    const cron = getCronStatus();
+    const bulkState = loadSyncState();
+    const sourceStats = await getSourcePageStats();
+    const recentLogs = await prisma.syncLog.findMany({
+      take: 15,
+      orderBy: { started_at: "desc" },
+    });
+
+    return res.json({
+      status: true,
+      data: {
+        cron,
+        bulk: bulkState,
+        sourceStats,
+        logs: recentLogs,
+      },
+    });
+  } catch (error: any) {
+    return res.status(500).json({ status: false, msg: error.message });
+  }
+}
+
+export async function toggleCronJob(req: Request, res: Response) {
+  try {
+    const source = (req.body.source || "all") as "all" | "kkphim" | "vsmov" | "nguonc";
+    const { enable } = req.body;
+    const isEnabled = toggleCron(source, typeof enable === "boolean" ? enable : undefined);
+
+    return res.json({
+      status: true,
+      enabled: isEnabled,
+      source,
+      msg: `Cronjob 15 phút cho nguồn [${source.toUpperCase()}]: ${isEnabled ? "BẬT" : "TẮT"}`,
+    });
+  } catch (error: any) {
+    return res.status(500).json({ status: false, msg: error.message });
+  }
+}
+
+export async function startBulkSync(req: Request, res: Response) {
+  try {
+    const source = (req.body.source || "all") as "all" | "kkphim" | "vsmov" | "nguonc";
+    const startPage = Math.max(1, Number(req.body.startPage) || 1);
+    const maxPages = req.body.maxPages ? Number(req.body.maxPages) : undefined;
+
+    syncBulk({
+      source,
+      startPage,
+      maxPages,
+    }).catch((err) => console.error("[Admin Bulk Sync] Lỗi ngầm:", err.message));
+
+    return res.json({
+      status: true,
+      msg: `Đã bắt đầu cào Full kho phim [Nguồn: ${source.toUpperCase()}] từ Page ${startPage}!`,
+    });
+  } catch (error: any) {
+    return res.status(500).json({ status: false, msg: error.message });
+  }
+}
+
+export async function pauseBulkSyncHandler(req: Request, res: Response) {
+  try {
+    pauseBulkSync();
+    return res.json({
+      status: true,
+      msg: "Đã gửi lệnh tạm dừng cào Full.",
+    });
+  } catch (error: any) {
+    return res.status(500).json({ status: false, msg: error.message });
+  }
+}
+
+export async function mergeMoviesHandler(req: Request, res: Response) {
+  try {
+    const { sourceSlug, targetSlug } = req.body;
+    if (!sourceSlug || !targetSlug) {
+      return res.status(400).json({ status: false, msg: "Thiếu sourceSlug hoặc targetSlug" });
+    }
+
+    const result = await mergeMoviesManually(sourceSlug, targetSlug);
+    return res.json({
+      status: result.success,
+      msg: result.msg,
+    });
+  } catch (error: any) {
+    return res.status(500).json({ status: false, msg: error.message });
+  }
+}
+
 export async function getSyncLogs(req: Request, res: Response) {
   try {
     const logs = await prisma.syncLog.findMany({

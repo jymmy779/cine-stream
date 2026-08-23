@@ -1,5 +1,17 @@
 import { createClient } from "@supabase/supabase-js";
 
+let globalSupabaseClient: any = null;
+
+function getSupabaseClient() {
+    if (!globalSupabaseClient) {
+        globalSupabaseClient = createClient(
+            process.env.NEXT_PUBLIC_SUPABASE_URL!,
+            process.env.NEXT_PUBLIC_SUPABASE_SERVICE_ROLE_KEY || process.env.NEXT_PUBLIC_SUPABASE_ANON_KEY!
+        );
+    }
+    return globalSupabaseClient;
+}
+
 export async function enrichApiDataWithDatabase(data: any): Promise<any> {
     if (!data) return data;
     try {
@@ -51,10 +63,7 @@ export async function enrichApiDataWithDatabase(data: any): Promise<any> {
 
         if (slugs.length === 0) return data;
 
-        const supabase = createClient(
-            process.env.NEXT_PUBLIC_SUPABASE_URL!,
-            process.env.NEXT_PUBLIC_SUPABASE_SERVICE_ROLE_KEY || process.env.NEXT_PUBLIC_SUPABASE_ANON_KEY!
-        );
+        const supabase = getSupabaseClient();
 
         // Batch query - chunks of 100 to avoid URL length issues
         let dbMovies: any[] = [];

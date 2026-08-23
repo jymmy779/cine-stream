@@ -74,6 +74,56 @@ function formatMovieSummary(m: any) {
   };
 }
 
+// In-Memory View Buffer to avoid frequent SQLite write locks
+const viewBuffer = new Map<string, number>();
+
+export async function flushViewBuffer() {
+  if (viewBuffer.size === 0) return;
+  const entries = Array.from(viewBuffer.entries());
+  viewBuffer.clear();
+  try {
+    // Perform batch updates in transaction
+    await prisma.$transaction(
+      entries.map(([id, count]) =>
+        prisma.movie.update({
+          where: { id },
+          data: { view_count: { increment: count } },
+        })
+      )
+    );
+  } catch (err: any) {
+    console.error("[ViewBuffer] Lỗi flush view:", err.message);
+  }
+}
+
+// Auto-flush every 30 seconds
+setInterval(() => {
+  flushViewBuffer().catch(() => {});
+}, 30000);
+
+export function recordMovieView(movieId: string) {
+  const current = viewBuffer.get(movieId) || 0;
+  viewBuffer.set(movieId, current + 1);
+  if (viewBuffer.size >= 50) {
+    flushViewBuffer().catch(() => {});
+  }
+}
+
+// Helper đồng bộ 1 phim vào FTS5 Virtual Table
+export async function syncMovieToFts(id: string, name: string, originName: string | null, slug: string) {
+  try {
+    await prisma.$executeRawUnsafe(
+      `INSERT OR REPLACE INTO movie_fts(id, name, origin_name, slug) VALUES (?, ?, ?, ?);`,
+      id,
+      name,
+      originName || "",
+      slug
+    );
+  } catch (err: any) {
+    console.error("[FTS5 Sync] Lỗi:", err.message);
+  }
+}
+
 /**
  * GET /api/v1/phim/:slug
  * Lấy chi tiết đầy đủ 1 bộ phim kèm servers & episodes
@@ -88,6 +138,8 @@ export async function getMovieDetail(req: Request, res: Response) {
     const cacheKey = `movie_detail:${slug}`;
     const cached = getCached(cacheKey);
     if (cached) {
+      // Record view in memory buffer
+      if (cached.movie?._id) recordMovieView(cached.movie._id);
       return res.json(cached);
     }
 
@@ -110,11 +162,8 @@ export async function getMovieDetail(req: Request, res: Response) {
       return res.status(404).json({ status: false, msg: "Không tìm thấy phim" });
     }
 
-    // Tăng lượt view nhẹ nhàng
-    prisma.movie.update({
-      where: { id: movie.id },
-      data: { view_count: { increment: 1 } },
-    }).catch(() => {});
+    // Tăng lượt view nhẹ nhàng qua RAM buffer (Không khóa DB)
+    recordMovieView(movie.id);
 
     // Format theo chuẩn KKPhim response
     const formattedMovie = {
@@ -164,6 +213,38 @@ export async function getMovieDetail(req: Request, res: Response) {
       },
     };
 
+    const isSeriesOngoing =
+      (movie.type === "series" || movie.type === "hoathinh" || movie.type === "tvshows") &&
+      !((movie.episode_current || "").toLowerCase().includes("hoàn tất") ||
+        (movie.episode_current || "").toLowerCase().includes("full") ||
+        movie.status === "completed");
+
+    function extractMaxEpisodeNumber(server: any): number {
+      if (!server?.server_data || !Array.isArray(server.server_data) || server.server_data.length === 0) return 0;
+      let maxEp = 0;
+      for (const ep of server.server_data) {
+        const text = `${ep.name || ""} ${ep.slug || ""}`;
+        const matches = text.match(/\d+/g);
+        if (matches) {
+          for (const m of matches) {
+            const num = parseInt(m, 10);
+            if (num > maxEp && num < 100000) maxEp = num;
+          }
+        }
+      }
+      return maxEp > 0 ? maxEp : server.server_data.length;
+    }
+
+    function getSourcePriorityScore(serverName: string): number {
+      const s = (serverName || "").toUpperCase();
+      if (s.includes("ĐỘC QUYỀN") || s.includes("EXCLUSIVE") || s.includes("SONG NGỮ")) return 100;
+      if (s.includes(" KK")) return 80;
+      if (s.includes(" VS")) return 60;
+      if (s.includes(" NC")) return 40;
+      if (s.includes(" OP")) return 20;
+      return 50;
+    }
+
     const formattedEpisodes = movie.episodes.map((s) => ({
       server_name: s.server_name,
       server_data: s.server_data.map((ep) => ({
@@ -175,11 +256,30 @@ export async function getMovieDetail(req: Request, res: Response) {
       })),
     }));
 
+    const sortedEpisodes = formattedEpisodes.sort((a: any, b: any) => {
+      const maxEpA = extractMaxEpisodeNumber(a);
+      const maxEpB = extractMaxEpisodeNumber(b);
+      if (isSeriesOngoing && maxEpB !== maxEpA) {
+        return maxEpB - maxEpA;
+      }
+      const hasM3u8A = a.server_data?.some((ep: any) => ep.link_m3u8 && ep.link_m3u8.trim().length > 0) ? 1 : 0;
+      const hasM3u8B = b.server_data?.some((ep: any) => ep.link_m3u8 && ep.link_m3u8.trim().length > 0) ? 1 : 0;
+      if (hasM3u8B !== hasM3u8A) {
+        return hasM3u8B - hasM3u8A;
+      }
+      const prioA = getSourcePriorityScore(a.server_name);
+      const prioB = getSourcePriorityScore(b.server_name);
+      if (prioB !== prioA) {
+        return prioB - prioA;
+      }
+      return (a.server_name || "").localeCompare(b.server_name || "", "vi");
+    });
+
     const result = {
       status: true,
       msg: "Thành công",
       movie: formattedMovie,
-      episodes: formattedEpisodes,
+      episodes: sortedEpisodes,
     };
 
     // Cache in RAM for 120 seconds
@@ -207,11 +307,13 @@ export async function getCatalog(req: Request, res: Response) {
     const categorySlug = (req.query.category as string) || (type === "the-loai" ? slug : undefined);
     const countrySlug = (req.query.country as string) || (type === "quoc-gia" ? slug : undefined);
     const year = req.query.year ? Number(req.query.year) : undefined;
+    const minYear = req.query.min_year ? Number(req.query.min_year) : undefined;
+    const maxYear = req.query.max_year ? Number(req.query.max_year) : undefined;
     const status = req.query.status as string;
     const sortField = (req.query.sort_field as string) || "updated_at";
     const sortType = (req.query.sort_type as string)?.toLowerCase() === "asc" ? "asc" : "desc";
 
-    const cacheKey = `catalog:${type || ''}:${slug || ''}:${page}:${limit}:${queryType || ''}:${categorySlug || ''}:${countrySlug || ''}:${year || ''}:${status || ''}:${sortField}:${sortType}`;
+    const cacheKey = `catalog:${type || ''}:${slug || ''}:${page}:${limit}:${queryType || ''}:${categorySlug || ''}:${countrySlug || ''}:${year || ''}:${minYear || ''}:${maxYear || ''}:${status || ''}:${sortField}:${sortType}`;
     const cached = getCached(cacheKey);
     if (cached) {
       return res.json(cached);
@@ -251,9 +353,14 @@ export async function getCatalog(req: Request, res: Response) {
       };
     }
 
-    // Lọc theo Năm
+    // Lọc theo Năm (Chính xác hoặc Khoảng năm min_year - max_year)
     if (year) {
       where.year = year;
+    } else if (minYear || maxYear) {
+      where.year = {
+        ...(minYear ? { gte: minYear } : {}),
+        ...(maxYear ? { lte: maxYear } : {}),
+      };
     }
 
     // Lọc theo Trạng thái (completed / ongoing)
@@ -340,7 +447,7 @@ function removeVietnameseTones(str: string): string {
 
 /**
  * GET /api/v1/tim-kiem?keyword=...
- * Tìm kiếm phim không dấu / có dấu siêu tốc
+ * Tìm kiếm phim không dấu / có dấu siêu tốc bằng SQLite FTS5 (Tốc độ ~1ms)
  */
 export async function searchMovies(req: Request, res: Response) {
   try {
@@ -368,6 +475,96 @@ export async function searchMovies(req: Request, res: Response) {
       return res.json(cached);
     }
 
+    // TẦNG 1: Tìm kiếm siêu tốc bằng SQLite FTS5 (1ms)
+    try {
+      const cleanWords = keyword
+        .replace(/['"\\\/(){}\[\]*+~^:?-]/g, " ")
+        .trim()
+        .split(/\s+/)
+        .filter((w) => w.length > 0);
+
+      if (cleanWords.length > 0) {
+        const phraseQuery = `"${cleanWords.join(" ")}"*`;
+        const andTokens = cleanWords.map((w) => `"${w}"*`).join(" AND ");
+        const ftsQuery = cleanWords.length > 1 ? `(${phraseQuery}) OR (${andTokens})` : `"${cleanWords[0]}"*`;
+
+        const countSql = `SELECT count(*) as count FROM movie_fts WHERE movie_fts MATCH ?;`;
+        const countRes: any = await prisma.$queryRawUnsafe(countSql, ftsQuery);
+        const totalItems = Number(countRes[0]?.count || 0);
+
+        if (totalItems > 0) {
+          const itemsSql = `
+            SELECT m.id, m.name, m.slug, m.origin_name, m.thumb_url, m.poster_url, m.type, m.status,
+                   m.episode_current, m.episode_total, m.quality, m.lang, m.year, m.time, m.chieurap,
+                   m.sub_docquyen, m.view_count, m.updated_at, m.server_modified, m.tmdb_id, m.tmdb_type,
+                   m.tmdb_vote_average, m.tmdb_vote_count
+            FROM movie_fts
+            JOIN Movie m ON movie_fts.id = m.id
+            WHERE movie_fts MATCH ?
+            ORDER BY m.server_modified DESC, m.updated_at DESC, m.view_count DESC
+            LIMIT ? OFFSET ?;
+          `;
+          const rawMovies: any[] = await prisma.$queryRawUnsafe(itemsSql, ftsQuery, limit, skip);
+
+          const movieIds = rawMovies.map((m) => m.id);
+          const [categories, countries] = await Promise.all([
+            prisma.movieCategory.findMany({
+              where: { movie_id: { in: movieIds } },
+              include: { category: true },
+            }),
+            prisma.movieCountry.findMany({
+              where: { movie_id: { in: movieIds } },
+              include: { country: true },
+            }),
+          ]);
+
+          const catMap = new Map<string, any[]>();
+          categories.forEach((c) => {
+            if (!catMap.has(c.movie_id)) catMap.set(c.movie_id, []);
+            catMap.get(c.movie_id)!.push(c);
+          });
+
+          const countryMap = new Map<string, any[]>();
+          countries.forEach((c) => {
+            if (!countryMap.has(c.movie_id)) countryMap.set(c.movie_id, []);
+            countryMap.get(c.movie_id)!.push(c);
+          });
+
+          const formattedItems = rawMovies.map((m) =>
+            formatMovieSummary({
+              ...m,
+              categories: catMap.get(m.id) || [],
+              countries: countryMap.get(m.id) || [],
+            })
+          );
+
+          const totalPages = Math.ceil(totalItems / limit) || 1;
+          const result = {
+            status: "success",
+            message: "Thành công",
+            data: {
+              items: formattedItems,
+              params: {
+                keyword,
+                pagination: {
+                  totalItems,
+                  totalItemsPerPage: limit,
+                  currentPage: page,
+                  totalPages,
+                },
+              },
+            },
+          };
+
+          setCache(cacheKey, result, 60);
+          return res.json(result);
+        }
+      }
+    } catch (ftsErr: any) {
+      console.warn("[FTS5 Search Fallback] Lỗi FTS5, chuyển sang standard scan:", ftsErr.message);
+    }
+
+    // TẦNG 2: Fallback tìm kiếm tiêu chuẩn nếu FTS5 không có kết quả
     const rawKeyword = keyword.toLowerCase();
     const normalizedKeyword = removeVietnameseTones(keyword).toLowerCase();
     const slugKeyword = normalizedKeyword.replace(/\s+/g, "-");
@@ -426,7 +623,6 @@ export async function searchMovies(req: Request, res: Response) {
     };
 
     setCache(cacheKey, result, 60);
-
     return res.json(result);
   } catch (error: any) {
     console.error("[API Search] Lỗi:", error.message);

@@ -5,6 +5,36 @@ import { MovieDetailResponse } from "@/app/types/movie";
 
 import { INTERNAL_API_URL } from "@/app/utils/apiConfig";
 
+// Helper tính số tập lớn nhất thực tế của server (ví dụ: Tập 1210 -> 1210, không phụ thuộc vào tập gộp hay độ dài mảng)
+function extractMaxEpisodeNumber(server: any): number {
+    if (!server?.server_data || !Array.isArray(server.server_data) || server.server_data.length === 0) return 0;
+    let maxEp = 0;
+    for (const ep of server.server_data) {
+        const text = `${ep.name || ''} ${ep.slug || ''}`;
+        const matches = text.match(/\d+/g);
+        if (matches) {
+            for (const m of matches) {
+                const num = parseInt(m, 10);
+                if (num > maxEp && num < 100000) {
+                    maxEp = num;
+                }
+            }
+        }
+    }
+    return maxEp > 0 ? maxEp : server.server_data.length;
+}
+
+// Helper xếp hạng độ ưu tiên nguồn ổn định khi số tập mới nhất bằng nhau
+function getSourcePriorityScore(serverName: string): number {
+    const s = (serverName || "").toUpperCase();
+    if (s.includes("ĐỘC QUYỀN") || s.includes("EXCLUSIVE") || s.includes("SONG NGỮ")) return 100;
+    if (s.includes(" KK")) return 80;
+    if (s.includes(" VS")) return 60;
+    if (s.includes(" NC")) return 40;
+    if (s.includes(" OP")) return 20;
+    return 50;
+}
+
 const detailMemoryCache = new Map<string, { data: MovieDetailResponse | null; expires: number }>();
 
 export const getMovieDetail = cache(async (slug: string, isPreview: boolean = false): Promise<MovieDetailResponse | null> => {
@@ -135,15 +165,17 @@ export const getMovieDetail = cache(async (slug: string, isPreview: boolean = fa
             const isSeriesOngoing = (exclusiveMovie.type === "series" || exclusiveMovie.type === "hoathinh" || exclusiveMovie.type === "tvshows") && 
                 !((exclusiveMovie.episode_current || "").toLowerCase().includes("hoàn tất") || (exclusiveMovie.episode_current || "").toLowerCase().includes("full") || exclusiveMovie.status === "completed");
 
-            // Sắp xếp Server:
-            // - Nếu là phim bộ Ongoing: Server có số tập nhiều nhất đứng đầu!
-            // - Nếu số tập bằng nhau: Ưu tiên Server M3U8 trực tiếp
+            // Sắp xếp Server thông minh:
+            // 1. Phim đang chiếu: Nguồn có tập mới nhất (Max Episode Number) đứng đầu
+            // 2. Nếu tập mới nhất bằng nhau: Ưu tiên Server có link M3U8 trực tiếp
+            // 3. Nếu cùng có M3U8: Ưu tiên độ ổn định nguồn KKPhim (KK) > VSMov (VS) > NguonC (NC) > OPhim (OP)
             const finalEpisodes = uniqueServersList.sort((a, b) => {
-                const countA = a.server_data?.length || 0;
-                const countB = b.server_data?.length || 0;
+                const maxEpA = extractMaxEpisodeNumber(a);
+                const maxEpB = extractMaxEpisodeNumber(b);
 
-                if (isSeriesOngoing && countB !== countA) {
-                    return countB - countA;
+                // Ưu tiên nguồn có tập mới hơn hẳn
+                if (isSeriesOngoing && maxEpB !== maxEpA) {
+                    return maxEpB - maxEpA;
                 }
 
                 // Ưu tiên Server có link M3U8 trực tiếp
@@ -153,7 +185,14 @@ export const getMovieDetail = cache(async (slug: string, isPreview: boolean = fa
                     return hasM3u8B - hasM3u8A;
                 }
 
-                return 0;
+                // Ưu tiên theo độ ổn định nguồn (KK > VS > NC > OP)
+                const prioA = getSourcePriorityScore(a.server_name);
+                const prioB = getSourcePriorityScore(b.server_name);
+                if (prioB !== prioA) {
+                    return prioB - prioA;
+                }
+
+                return (a.server_name || "").localeCompare(b.server_name || "", "vi");
             });
             
             let calculatedEpisodeCurrent = exclusiveMovie.type === "single" ? "Full" : "";
@@ -327,14 +366,22 @@ export const getMovieDetail = cache(async (slug: string, isPreview: boolean = fa
                         !((phimApiData.movie?.episode_current || "").toLowerCase().includes("hoàn tất") || (phimApiData.movie?.episode_current || "").toLowerCase().includes("full") || phimApiData.movie?.status === "completed");
 
                     phimApiData.episodes = mappedEpisodes.sort((a: any, b: any) => {
-                        const countA = a.server_data?.length || 0;
-                        const countB = b.server_data?.length || 0;
-                        if (isSeriesOngoing && countB !== countA) {
-                            return countB - countA;
+                        const maxEpA = extractMaxEpisodeNumber(a);
+                        const maxEpB = extractMaxEpisodeNumber(b);
+                        if (isSeriesOngoing && maxEpB !== maxEpA) {
+                            return maxEpB - maxEpA;
                         }
                         const hasM3u8A = a.server_data?.some((ep: any) => ep.link_m3u8 && ep.link_m3u8.trim().length > 0) ? 1 : 0;
                         const hasM3u8B = b.server_data?.some((ep: any) => ep.link_m3u8 && ep.link_m3u8.trim().length > 0) ? 1 : 0;
-                        return hasM3u8B - hasM3u8A;
+                        if (hasM3u8B !== hasM3u8A) {
+                            return hasM3u8B - hasM3u8A;
+                        }
+                        const prioA = getSourcePriorityScore(a.server_name);
+                        const prioB = getSourcePriorityScore(b.server_name);
+                        if (prioB !== prioA) {
+                            return prioB - prioA;
+                        }
+                        return (a.server_name || "").localeCompare(b.server_name || "", "vi");
                     });
                 }
                 if (!isPreview) {

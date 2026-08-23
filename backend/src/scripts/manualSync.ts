@@ -1,23 +1,14 @@
-import dotenv from "dotenv";
-dotenv.config();
-
-import { syncTaxonomies, syncIncremental } from "../services/syncService.js";
-import { prisma } from "../lib/prisma.js";
+ï»¿import { syncIncremental } from "../services/syncService.js";
 
 async function main() {
-  console.log("?? [Manual Sync] B?t d?u d?ng b? t?c thì...");
-  const pages = Number(process.argv[2]) || 3;
-  
-  await syncTaxonomies();
-  const res = await syncIncremental(pages);
-
-  console.log("\n?? K?t qu?:", res);
-  await prisma.$disconnect();
+  const pages = parseInt(process.argv[2] || "2", 10);
+  const source = (process.argv[3] || "all") as "all" | "kkphim" | "vsmov" | "nguonc";
+  console.log(`[ManualSync] Running sync for ${pages} pages from source: ${source}...`);
+  await syncIncremental(source, pages);
   process.exit(0);
 }
 
-main().catch(async (e) => {
-  console.error("? L?i:", e);
-  await prisma.$disconnect();
+main().catch((err) => {
+  console.error(err);
   process.exit(1);
 });

@@ -50,6 +50,7 @@ model Movie {
   @@index([status])
   @@index([name])
   @@index([origin_name])
+  @@index([tmdb_id])
   @@index([server_modified])
   @@index([type, server_modified])
   @@index([type, year])
@@ -81,6 +82,7 @@ model MovieCategory {
 
   @@id([movie_id, category_id])
   @@index([category_id])
+  @@index([category_id, movie_id])
 }
 
 model MovieCountry {
@@ -91,6 +93,7 @@ model MovieCountry {
 
   @@id([movie_id, country_id])
   @@index([country_id])
+  @@index([country_id, movie_id])
 }
 
 model EpisodeServer {

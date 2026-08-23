@@ -1,4 +1,4 @@
-﻿import fs from "fs";
+import fs from "fs";
 import path from "path";
 import { prisma } from "../lib/prisma.js";
 import {
@@ -8,48 +8,157 @@ import {
   fetchKKPhimMovieDetail,
   KKPhimDetailResponse,
 } from "./kkphimClient.js";
+import {
+  fetchVSMovUpdatedPage,
+  fetchVSMovMovieDetail,
+} from "./vsmovClient.js";
+import {
+  fetchNguonCUpdatedPage,
+  fetchNguonCMovieDetail,
+} from "./nguoncClient.js";
+import { findMatchingMovieInDb } from "./movieMatcher.js";
+import {
+  STANDARD_CATEGORIES,
+  STANDARD_COUNTRIES,
+  normalizeCategories,
+  normalizeCountries,
+} from "./taxonomyNormalizer.js";
+import { syncMovieToFts } from "../controllers/movieController.js";
 
 const STATE_FILE_PATH = path.resolve(process.cwd(), ".sync_state.json");
+
+export interface LiveLogItem {
+  id: string;
+  time: string;
+  text: string;
+  type: "new" | "update" | "info" | "error";
+}
 
 interface SyncState {
   last_seed_page: number;
   total_seeded: number;
   last_sync_time: string;
+  is_running?: boolean;
+  current_source?: string;
+  current_page?: number;
+  total_pages?: number;
+  percent?: string;
+  percent_num?: number;
+  created_count?: number;
+  updated_count?: number;
+  live_logs?: LiveLogItem[];
 }
 
-function loadSyncState(): SyncState {
+const memoryLogs: LiveLogItem[] = [];
+
+export function addLiveLog(text: string, type: "new" | "update" | "info" | "error" = "info") {
+  const now = new Date();
+  const timeStr = now.toLocaleTimeString("vi-VN");
+  const logItem: LiveLogItem = {
+    id: `${Date.now()}-${Math.random().toString(36).substring(2, 7)}`,
+    time: timeStr,
+    text,
+    type,
+  };
+  memoryLogs.push(logItem); // Thứ tự thời gian chuẩn, KHÔNG LIMIT: Lưu trọn vẹn 100% dòng log
+}
+
+export function clearLiveLogs() {
+  memoryLogs.length = 0;
+}
+
+export function getRecentLiveLogs(): LiveLogItem[] {
+  return memoryLogs;
+}
+
+let sourceStatsCache: {
+  timestamp: number;
+  data: {
+    kkphim: { totalPages: number; totalItems: number };
+    vsmov: { totalPages: number; totalItems: number };
+    nguonc: { totalPages: number; totalItems: number };
+    all: { totalPages: number; totalItems: number };
+  };
+} | null = null;
+
+export async function getSourcePageStats() {
+  const now = Date.now();
+  if (sourceStatsCache && now - sourceStatsCache.timestamp < 300000) {
+    return sourceStatsCache.data;
+  }
+
+  const [kk, vs, nc] = await Promise.all([
+    fetchKKPhimUpdatedPage(1).catch(() => null),
+    fetchVSMovUpdatedPage(1).catch(() => null),
+    fetchNguonCUpdatedPage(1).catch(() => null),
+  ]);
+
+  const kkPages = kk?.pagination?.totalPages || 1255;
+  const kkItems = kk?.pagination?.totalItems || 30120;
+
+  const vsPages = vs?.pagination?.totalPages || 774;
+  const vsItems = vs?.pagination?.totalItems || 18567;
+
+  const ncPages = nc?.pagination?.totalPages || 3345;
+  const ncItems = nc?.pagination?.totalItems || 33450;
+
+  const allPages = kkPages + vsPages + ncPages;
+  const allItems = kkItems + vsItems + ncItems;
+
+  const data = {
+    kkphim: { totalPages: kkPages, totalItems: kkItems },
+    vsmov: { totalPages: vsPages, totalItems: vsItems },
+    nguonc: { totalPages: ncPages, totalItems: ncItems },
+    all: { totalPages: allPages, totalItems: allItems },
+  };
+
+  sourceStatsCache = { timestamp: now, data };
+  return data;
+}
+
+export function loadSyncState(): SyncState {
   try {
     if (fs.existsSync(STATE_FILE_PATH)) {
       const data = fs.readFileSync(STATE_FILE_PATH, "utf-8");
-      return JSON.parse(data);
+      const parsed = JSON.parse(data);
+      return {
+        ...parsed,
+        live_logs: memoryLogs, // Trả về đầy đủ log để scroll mượt mà từ dòng đầu tiên
+      };
     }
   } catch {}
-  return { last_seed_page: 1, total_seeded: 0, last_sync_time: "" };
+  return { last_seed_page: 1, total_seeded: 0, last_sync_time: "", is_running: false, live_logs: memoryLogs };
 }
 
-function saveSyncState(state: SyncState) {
+export function saveSyncState(state: SyncState) {
   try {
     fs.writeFileSync(STATE_FILE_PATH, JSON.stringify(state, null, 2), "utf-8");
   } catch (err: any) {
-    console.error("[SyncState] KhÃ´ng th? luu state:", err.message);
+    console.error("[SyncState] Không thể lưu state:", err.message);
   }
 }
 
+let isBulkSyncCancelled = false;
+
+export function pauseBulkSync() {
+  isBulkSyncCancelled = true;
+  addLiveLog("⏸ Đã nhận lệnh tạm dừng cào từ Admin.", "error");
+  const currentState = loadSyncState();
+  saveSyncState({
+    ...currentState,
+    is_running: false,
+  });
+}
+
 /**
- * 1. Ã?ng b? Th? Lo?i & Qu?c Gia t? KKPhim
+ * 1. Đồng bộ Thể Loại & Quốc Gia từ KKPhim
  */
 export async function syncTaxonomies() {
-  console.log("[Taxonomies] Starting sync categories & countries...");
+  console.log("[Taxonomies] Starting sync standard categories & countries...");
+  addLiveLog("Đang đồng bộ danh mục Thể Loại & Quốc Gia chuẩn LoFilm...", "info");
 
-  const [categories, countries] = await Promise.all([
-    fetchKKPhimCategories(),
-    fetchKKPhimCountries(),
-  ]);
-
-  // Upsert Categories
   let catCount = 0;
-  for (const cat of categories) {
-    if (!cat.slug) continue;
+  for (const cat of STANDARD_CATEGORIES) {
     await prisma.category.upsert({
       where: { slug: cat.slug },
       update: { name: cat.name },
@@ -58,10 +167,8 @@ export async function syncTaxonomies() {
     catCount++;
   }
 
-  // Upsert Countries
   let countryCount = 0;
-  for (const country of countries) {
-    if (!country.slug) continue;
+  for (const country of STANDARD_COUNTRIES) {
     await prisma.country.upsert({
       where: { slug: country.slug },
       update: { name: country.name },
@@ -70,165 +177,234 @@ export async function syncTaxonomies() {
     countryCount++;
   }
 
-  console.log(`? [Taxonomies] ÃÃ£ d?ng b? ${catCount} th? lo?i vÃ  ${countryCount} qu?c gia.`);
+  console.log(`✅ [Taxonomies] Đã đồng bộ ${catCount} thể loại và ${countryCount} quốc gia chuẩn.`);
+  addLiveLog(`✅ Đã đồng bộ ${catCount} thể loại và ${countryCount} quốc gia chuẩn LoFilm.`, "info");
+}
+
+function toSafeString(val: any): string {
+  if (typeof val === "string") return val.trim();
+  if (val && typeof val.url === "string") return val.url.trim();
+  return "";
 }
 
 /**
- * 2. Upsert thÃ´ng minh 1 b? phim kÃ¨m toÃ n b? Server & T?p phim
+ * 2. Upsert thông minh 1 bộ phim kèm toàn bộ Server & Tập phim từ bất kỳ nguồn nào
+ * Tự động đối soát 4 tầng để gộp server nếu phim đã có trong DB
  */
-export async function upsertMovieDetail(detail: KKPhimDetailResponse): Promise<boolean> {
+export async function upsertMovieDetail(
+  detail: KKPhimDetailResponse,
+  sourcePrefix: "KK" | "VS" | "NC" = "KK"
+): Promise<{ success: boolean; isNew: boolean; movieId: string | null; movieName: string; movieSlug: string }> {
   const { movie: m, episodes: servers } = detail;
-  if (!m || !m.slug) return false;
+  if (!m || !m.slug) return { success: false, isNew: false, movieId: null, movieName: "", movieSlug: "" };
 
   try {
     const serverModified = m.modified?.time ? new Date(m.modified.time) : new Date();
 
-    // 1. Upsert b?ng Movie
-    const movieRecord = await prisma.movie.upsert({
-      where: { slug: m.slug },
-      update: {
-        name: m.name,
-        origin_name: m.origin_name,
-        content: m.content || "",
-        type: m.type || "single",
-        status: m.status || "ongoing",
-        thumb_url: m.thumb_url || "",
-        poster_url: m.poster_url || "",
-        is_copyright: m.is_copyright ?? false,
-        sub_docquyen: m.sub_docquyen ?? false,
-        chieurap: m.chieurap ?? false,
-        trailer_url: m.trailer_url || "",
-        time: m.time || "",
-        episode_current: m.episode_current || "",
-        episode_total: String(m.episode_total || ""),
-        quality: m.quality || "HD",
-        lang: m.lang || "Vietsub",
-        notify: m.notify || "",
-        showtimes: m.showtimes || "",
-        year: m.year ? Number(m.year) : null,
-        view_count: m.view || 0,
-        tmdb_id: m.tmdb?.id ? String(m.tmdb.id) : null,
-        tmdb_type: m.tmdb?.type || null,
-        tmdb_vote_average: m.tmdb?.vote_average ? Number(m.tmdb.vote_average) : null,
-        tmdb_vote_count: m.tmdb?.vote_count ? Number(m.tmdb.vote_count) : null,
-        actors: JSON.stringify(Array.isArray(m.actor) ? m.actor.filter(Boolean) : []),
-        directors: JSON.stringify(Array.isArray(m.director) ? m.director.filter(Boolean) : []),
-        server_modified: serverModified,
-      },
-      create: {
-        slug: m.slug,
-        name: m.name,
-        origin_name: m.origin_name,
-        content: m.content || "",
-        type: m.type || "single",
-        status: m.status || "ongoing",
-        thumb_url: m.thumb_url || "",
-        poster_url: m.poster_url || "",
-        is_copyright: m.is_copyright ?? false,
-        sub_docquyen: m.sub_docquyen ?? false,
-        chieurap: m.chieurap ?? false,
-        trailer_url: m.trailer_url || "",
-        time: m.time || "",
-        episode_current: m.episode_current || "",
-        episode_total: String(m.episode_total || ""),
-        quality: m.quality || "HD",
-        lang: m.lang || "Vietsub",
-        notify: m.notify || "",
-        showtimes: m.showtimes || "",
-        year: m.year ? Number(m.year) : null,
-        view_count: m.view || 0,
-        tmdb_id: m.tmdb?.id ? String(m.tmdb.id) : null,
-        tmdb_type: m.tmdb?.type || null,
-        tmdb_vote_average: m.tmdb?.vote_average ? Number(m.tmdb.vote_average) : null,
-        tmdb_vote_count: m.tmdb?.vote_count ? Number(m.tmdb.vote_count) : null,
-        actors: JSON.stringify(Array.isArray(m.actor) ? m.actor.filter(Boolean) : []),
-        directors: JSON.stringify(Array.isArray(m.director) ? m.director.filter(Boolean) : []),
-        server_modified: serverModified,
-      },
+    const safePosterUrl = toSafeString(m.poster_url);
+    const safeThumbUrl = toSafeString(m.thumb_url) || safePosterUrl;
+    const safeTrailerUrl = toSafeString(m.trailer_url);
+    const safeContent = toSafeString(m.content);
+    const safeTime = toSafeString(m.time);
+    const safeEpCurrent = toSafeString(m.episode_current);
+    const safeEpTotal = toSafeString(m.episode_total);
+
+    // 1. Đối soát phim thông minh xem đã tồn tại trong DB chưa
+    const existingMovie = await findMatchingMovieInDb({
+      slug: m.slug,
+      name: m.name,
+      origin_name: m.origin_name,
+      year: m.year,
+      type: m.type,
+      tmdb_id: m.tmdb?.id,
     });
 
-    const movieId = movieRecord.id;
+    let targetMovieId = "";
+    let isNew = false;
 
-    // 2. Äá»“ng bá»™ Thá»ƒ loáº¡i (MovieCategory)
-    const categorySlugsToLink = new Set<string>();
-    if (Array.isArray(m.category)) {
-      m.category.forEach((cat: any) => { if (cat.slug) categorySlugsToLink.add(cat.slug); });
-    }
-    if (m.type === "hoathinh") {
-      categorySlugsToLink.add("hoat-hinh");
-    }
+    // Quality ranking logic
+    const qualityRanks: Record<string, number> = {
+      CAM: 1,
+      SD: 2,
+      HD: 3,
+      FHD: 4,
+      "2K": 5,
+      "4K": 6,
+    };
+    const getRank = (q: string) => qualityRanks[q?.toUpperCase()] || 0;
 
-    for (const catSlug of categorySlugsToLink) {
-      const categoryRecord = await prisma.category.findUnique({
-        where: { slug: catSlug },
-      });
+    if (existingMovie) {
+      targetMovieId = existingMovie.id;
+      isNew = false;
 
-      if (categoryRecord) {
-        await prisma.movieCategory.upsert({
-          where: {
-            movie_id_category_id: {
-              movie_id: movieId,
-              category_id: categoryRecord.id,
-            },
-          },
-          update: {},
-          create: {
-            movie_id: movieId,
-            category_id: categoryRecord.id,
-          },
-        });
-      }
-    }
+      const updateData: any = {
+        server_modified: serverModified,
+      };
 
-    // 3. Äá»“ng bá»™ Quá»‘c gia (MovieCountry)
-    if (Array.isArray(m.country) && m.country.length > 0) {
-      for (const country of m.country) {
-        if (!country.slug) continue;
-        const countryRecord = await prisma.country.findUnique({
-          where: { slug: country.slug },
-        });
-
-        if (countryRecord) {
-          await prisma.movieCountry.upsert({
-            where: {
-              movie_id_country_id: {
-                movie_id: movieId,
-                country_id: countryRecord.id,
-              },
-            },
-            update: {},
-            create: {
-              movie_id: movieId,
-              country_id: countryRecord.id,
-            },
-          });
+      if (sourcePrefix === "KK") {
+        updateData.name = m.name;
+        updateData.origin_name = m.origin_name;
+        updateData.content = safeContent || existingMovie.content;
+        updateData.thumb_url = safeThumbUrl || existingMovie.thumb_url;
+        updateData.poster_url = safePosterUrl || existingMovie.poster_url;
+        updateData.trailer_url = safeTrailerUrl || existingMovie.trailer_url;
+        updateData.time = safeTime || existingMovie.time;
+        updateData.year = m.year || existingMovie.year;
+        if (m.tmdb?.id) {
+          updateData.tmdb_id = String(m.tmdb.id);
+          updateData.tmdb_type = m.tmdb.type || existingMovie.tmdb_type;
+          updateData.tmdb_vote_average = m.tmdb.vote_average || existingMovie.tmdb_vote_average;
+          updateData.tmdb_vote_count = m.tmdb.vote_count || existingMovie.tmdb_vote_count;
         }
       }
+
+      // Giữ lại trailer nếu có
+      if (safeTrailerUrl && !existingMovie.trailer_url) {
+        updateData.trailer_url = safeTrailerUrl;
+      }
+
+      // Cập nhật số tập nếu nguồn mới có số tập cao hơn
+      const newMatch = safeEpCurrent.match(/\d+/);
+      const oldMatch = (existingMovie.episode_current || "").match(/\d+/);
+      const newNum = newMatch ? parseInt(newMatch[0], 10) : 0;
+      const oldNum = oldMatch ? parseInt(oldMatch[0], 10) : 0;
+
+      if (
+        newNum > oldNum ||
+        !existingMovie.episode_current ||
+        safeEpCurrent.toLowerCase().includes("hoàn tất")
+      ) {
+        updateData.episode_current = safeEpCurrent;
+      }
+
+      // Cập nhật chất lượng cao hơn
+      if (getRank(m.quality) > getRank(existingMovie.quality || "")) {
+        updateData.quality = m.quality;
+      }
+
+      await prisma.movie.update({
+        where: { id: existingMovie.id },
+        data: updateData,
+      });
+      syncMovieToFts(targetMovieId, updateData.name || existingMovie.name, updateData.origin_name || existingMovie.origin_name, existingMovie.slug).catch(() => {});
+    } else {
+      isNew = true;
+      const created = await prisma.movie.create({
+        data: {
+          slug: m.slug,
+          name: m.name,
+          origin_name: m.origin_name,
+          content: safeContent,
+          type: m.type || "single",
+          status: m.status || "ongoing",
+          thumb_url: safeThumbUrl,
+          poster_url: safePosterUrl,
+          is_copyright: m.is_copyright ?? false,
+          sub_docquyen: m.sub_docquyen ?? false,
+          chieurap: m.chieurap ?? false,
+          trailer_url: safeTrailerUrl,
+          time: safeTime,
+          episode_current: safeEpCurrent,
+          episode_total: safeEpTotal,
+          quality: m.quality || "HD",
+          lang: m.lang || "Vietsub",
+          notify: toSafeString(m.notify),
+          showtimes: toSafeString(m.showtimes),
+          year: m.year ? Number(m.year) : null,
+          view_count: m.view || 0,
+          tmdb_id: m.tmdb?.id ? String(m.tmdb.id) : null,
+          tmdb_type: m.tmdb?.type || null,
+          tmdb_vote_average: m.tmdb?.vote_average ? Number(m.tmdb.vote_average) : null,
+          tmdb_vote_count: m.tmdb?.vote_count ? Number(m.tmdb.vote_count) : null,
+          actors: JSON.stringify(Array.isArray(m.actor) ? m.actor.filter(Boolean) : []),
+          directors: JSON.stringify(Array.isArray(m.director) ? m.director.filter(Boolean) : []),
+          server_modified: serverModified,
+        },
+      });
+      targetMovieId = created.id;
+      syncMovieToFts(targetMovieId, created.name, created.origin_name, created.slug).catch(() => {});
     }
 
-    // 4. Ã?ng b? Servers & Episodes
+    // 2. Đồng bộ Thể loại (MovieCategory) theo danh mục chuẩn LoFilm
+    const normalizedCats = normalizeCategories(m.category || []);
+    if (m.type === "hoathinh" && !normalizedCats.some((c) => c.slug === "hoat-hinh")) {
+      normalizedCats.push({ name: "Hoạt Hình", slug: "hoat-hinh" });
+    }
+
+    for (const cat of normalizedCats) {
+      const categoryRecord = await prisma.category.findUnique({
+        where: { slug: cat.slug },
+      });
+
+      if (!categoryRecord) continue; // Tuyệt đối không tự tạo slug rác
+
+      await prisma.movieCategory.upsert({
+        where: {
+          movie_id_category_id: {
+            movie_id: targetMovieId,
+            category_id: categoryRecord.id,
+          },
+        },
+        update: {},
+        create: {
+          movie_id: targetMovieId,
+          category_id: categoryRecord.id,
+        },
+      });
+    }
+
+    // 3. Đồng bộ Quốc gia (MovieCountry) theo danh mục chuẩn LoFilm
+    const normalizedCountries = normalizeCountries(m.country || []);
+    for (const country of normalizedCountries) {
+      const countryRecord = await prisma.country.findUnique({
+        where: { slug: country.slug },
+      });
+
+      if (!countryRecord) continue; // Tuyệt đối không tự tạo slug rác
+
+      await prisma.movieCountry.upsert({
+        where: {
+          movie_id_country_id: {
+            movie_id: targetMovieId,
+            country_id: countryRecord.id,
+          },
+        },
+        update: {},
+        create: {
+          movie_id: targetMovieId,
+          country_id: countryRecord.id,
+        },
+      });
+    }
+
+    // 4. Đồng bộ Servers & Episodes với hậu tố nguồn rõ ràng
     if (Array.isArray(servers) && servers.length > 0) {
       for (const s of servers) {
-        if (!s.server_name) continue;
+        const rawServerName = (s.server_name || "Vietsub #1").replace(/\s+/g, " ").trim();
+        const suffix = ` ${sourcePrefix}`;
+        const finalServerName =
+          rawServerName.endsWith(" KK") ||
+          rawServerName.endsWith(" VS") ||
+          rawServerName.endsWith(" NC")
+            ? rawServerName
+            : `${rawServerName}${suffix}`;
 
-        // TÃ¬m ho?c t?o Server cho phim
         let serverRecord = await prisma.episodeServer.findFirst({
           where: {
-            movie_id: movieId,
-            server_name: s.server_name,
+            movie_id: targetMovieId,
+            server_name: finalServerName,
           },
         });
 
         if (!serverRecord) {
           serverRecord = await prisma.episodeServer.create({
             data: {
-              movie_id: movieId,
-              server_name: s.server_name,
+              movie_id: targetMovieId,
+              server_name: finalServerName,
             },
           });
         }
 
-        // Upsert t?ng t?p phim trong server
         if (Array.isArray(s.server_data) && s.server_data.length > 0) {
           for (const ep of s.server_data) {
             if (!ep.slug) continue;
@@ -244,7 +420,7 @@ export async function upsertMovieDetail(detail: KKPhimDetailResponse): Promise<b
               await prisma.episode.update({
                 where: { id: existingEp.id },
                 data: {
-                  name: ep.name || existingEp.name,
+                  name: (ep.name || existingEp.name).replace(/\s+/g, " ").trim(),
                   filename: ep.filename || existingEp.filename,
                   link_m3u8: ep.link_m3u8 || existingEp.link_m3u8,
                   link_embed: ep.link_embed || existingEp.link_embed,
@@ -254,7 +430,7 @@ export async function upsertMovieDetail(detail: KKPhimDetailResponse): Promise<b
               await prisma.episode.create({
                 data: {
                   server_id: serverRecord.id,
-                  name: ep.name || "T?p",
+                  name: (ep.name || "Tập").replace(/\s+/g, " ").trim(),
                   slug: ep.slug,
                   filename: ep.filename || "",
                   link_m3u8: ep.link_m3u8 || "",
@@ -267,76 +443,129 @@ export async function upsertMovieDetail(detail: KKPhimDetailResponse): Promise<b
       }
     }
 
-    return true;
+    // 5. Cập nhật lại lang và episode_current tổng hợp từ TẤT CẢ các server hiện có
+    const allServers = await prisma.episodeServer.findMany({
+      where: { movie_id: targetMovieId },
+      include: { server_data: true },
+    });
+
+    const detectedLangs = new Set<string>();
+    let maxEpsCount = 0;
+
+    allServers.forEach((srv) => {
+      const sNameLower = srv.server_name.toLowerCase();
+      if (sNameLower.includes("vietsub")) detectedLangs.add("Vietsub");
+      if (sNameLower.includes("thuyết minh")) detectedLangs.add("Thuyết Minh");
+      if (sNameLower.includes("lồng tiếng")) detectedLangs.add("Lồng Tiếng");
+      if (sNameLower.includes("song ngữ")) detectedLangs.add("Song Ngữ");
+
+      if (srv.server_data.length > maxEpsCount) {
+        maxEpsCount = srv.server_data.length;
+      }
+    });
+
+    const finalUpdate: any = {};
+
+    if (detectedLangs.size > 0) {
+      const order = ["Vietsub", "Thuyết Minh", "Lồng Tiếng", "Song Ngữ"];
+      const sortedLangs = Array.from(detectedLangs).sort(
+        (a, b) => order.indexOf(a) - order.indexOf(b)
+      );
+      finalUpdate.lang = sortedLangs.join(" + ");
+    }
+
+    if (m.type !== "single" && maxEpsCount > 0) {
+      const cur = (m.episode_current || "").toLowerCase();
+      if (!cur.includes("hoàn tất") && !cur.includes("full")) {
+        finalUpdate.episode_current = `Tập ${maxEpsCount}`;
+      }
+    }
+
+    if (Object.keys(finalUpdate).length > 0) {
+      await prisma.movie.update({
+        where: { id: targetMovieId },
+        data: finalUpdate,
+      });
+    }
+
+    return { success: true, isNew, movieId: targetMovieId, movieName: m.name, movieSlug: m.slug };
   } catch (error: any) {
-    console.error(`[SyncService] L?i upsert phim ${m.slug}:`, error.message);
-    return false;
+    console.error(`[SyncService] Lỗi upsert phim ${m.slug} (${sourcePrefix}):`, error.message);
+    return { success: false, isNew: false, movieId: null, movieName: m.name || "", movieSlug: m.slug || "" };
   }
 }
 
 /**
- * 3. Ã?ng b? Tang Cu?ng Ã?nh K? (Incremental Sync)
- * QuÃ©t N trang d?u c?a phim-moi-cap-nhat (m?i trang ~24 phim)
+ * 3. Đồng bộ Tăng Cường Định Kỳ (Incremental Sync)
  */
-export async function syncIncremental(pagesToScan = 2): Promise<{
+export async function syncIncremental(
+  source: "all" | "kkphim" | "vsmov" | "nguonc" = "all",
+  pagesToScan = 2
+): Promise<{
   created: number;
   updated: number;
   skipped: number;
 }> {
-  console.log(`?? [Sync Incremental] Ãang quÃ©t ${pagesToScan} trang m?i nh?t t? KKPhim...`);
+  console.log(`🔄 [Sync Incremental] Bắt đầu quét ${pagesToScan} trang mới nhất [Nguồn: ${source}]...`);
+  addLiveLog(`🔄 [ĐỒNG BỘ ĐỊNH KỲ] Nguồn: ${source.toUpperCase()} | Quét ${pagesToScan} trang mới nhất`, "info");
   const startTime = new Date();
 
   let created = 0;
   let updated = 0;
   let skipped = 0;
 
-  for (let page = 1; page <= pagesToScan; page++) {
-    const pageData = await fetchKKPhimUpdatedPage(page);
-    if (!pageData || !pageData.items || pageData.items.length === 0) continue;
+  const sourcesToRun: Array<"kkphim" | "vsmov" | "nguonc"> =
+    source === "all" ? ["kkphim", "vsmov", "nguonc"] : [source];
 
-    for (const item of pageData.items) {
-      if (!item.slug) continue;
+  for (const src of sourcesToRun) {
+    const prefix: "KK" | "VS" | "NC" =
+      src === "kkphim" ? "KK" : src === "vsmov" ? "VS" : "NC";
 
-      const existingMovie = await prisma.movie.findUnique({
-        where: { slug: item.slug },
-        select: { id: true, server_modified: true },
-      });
+    for (let page = 1; page <= pagesToScan; page++) {
+      let items: any[] = [];
 
-      const remoteModifiedTime = item.modified?.time ? new Date(item.modified.time).getTime() : 0;
-      const localModifiedTime = existingMovie?.server_modified ? new Date(existingMovie.server_modified).getTime() : 0;
-
-      // N?u phim dÃ£ cÃ³ vÃ  th?i gian c?p nh?t c?a server khÃ´ng d?i -> B? qua
-      if (existingMovie && localModifiedTime >= remoteModifiedTime && remoteModifiedTime > 0) {
-        skipped++;
-        continue;
+      if (src === "kkphim") {
+        const p = await fetchKKPhimUpdatedPage(page);
+        items = p?.items || [];
+      } else if (src === "vsmov") {
+        const p = await fetchVSMovUpdatedPage(page);
+        items = p?.items || [];
+      } else if (src === "nguonc") {
+        const p = await fetchNguonCUpdatedPage(page);
+        items = p?.items || [];
       }
 
-      // Fetch chi ti?t vÃ  c?p nh?t
-      const detail = await fetchKKPhimMovieDetail(item.slug);
-      if (detail) {
-        const ok = await upsertMovieDetail(detail);
-        if (ok) {
-          if (existingMovie) {
-            updated++;
-            console.log(`  [Updated] ${item.name} (${item.slug})`);
-          } else {
-            created++;
-            console.log(`  [New Movie] ${item.name} (${item.slug})`);
+      for (const item of items) {
+        if (!item.slug) continue;
+
+        let detail: KKPhimDetailResponse | null = null;
+        if (src === "kkphim") detail = await fetchKKPhimMovieDetail(item.slug);
+        else if (src === "vsmov") detail = await fetchVSMovMovieDetail(item.slug);
+        else if (src === "nguonc") detail = await fetchNguonCMovieDetail(item.slug);
+
+        if (detail) {
+          const res = await upsertMovieDetail(detail, prefix);
+          if (res.success) {
+            if (res.isNew) {
+              created++;
+              addLiveLog(`[+ MỚI] ${item.name} (${item.slug}) [${prefix}]`, "new");
+            } else {
+              updated++;
+              addLiveLog(`[~ CẬP NHẬT] ${item.name} (${item.slug}) [${prefix}]`, "update");
+            }
           }
         }
-      }
 
-      // Delay nh? 80ms gi?a cÃ¡c request chi ti?t
-      await new Promise((r) => setTimeout(r, 80));
+        await new Promise((r) => setTimeout(r, 60));
+      }
     }
   }
 
-  // Ghi log vÃ o b?ng SyncLog
   await prisma.syncLog.create({
     data: {
-      sync_type: "CRON_INCREMENTAL",
+      sync_type: `CRON_${source.toUpperCase()}`,
       status: "SUCCESS",
-      pages_crawled: pagesToScan,
+      pages_crawled: pagesToScan * sourcesToRun.length,
       movies_created: created,
       movies_updated: updated,
       started_at: startTime,
@@ -344,17 +573,16 @@ export async function syncIncremental(pagesToScan = 2): Promise<{
     },
   });
 
-  console.log(
-    `? [Sync Incremental HoÃ n t?t] M?i: ${created} | C?p nh?t: ${updated} | B? qua (khÃ´ng d?i): ${skipped}`
-  );
+  addLiveLog(`🎉 Hoàn tất quét nhanh! Mới: +${created}, Cập nhật: ~${updated} phim.`, "info");
 
   return { created, updated, skipped };
 }
 
 /**
- * 4. Ã?ng b? ToÃ n B? 30.000 Phim (Bulk Seeder) v?i Concurrency & Resume
+ * 4. Đồng bộ Toàn Bộ Kho Phim (Bulk Seeder)
  */
-export async function syncBulkAll(options?: {
+export async function syncBulk(options?: {
+  source?: "all" | "kkphim" | "vsmov" | "nguonc";
   startPage?: number;
   maxPages?: number;
   concurrency?: number;
@@ -363,89 +591,232 @@ export async function syncBulkAll(options?: {
     totalPages: number;
     syncedCount: number;
     percent: string;
+    source: string;
   }) => void;
 }) {
-  const state = loadSyncState();
-  const startPage = options?.startPage || state.last_seed_page || 1;
-  const concurrency = options?.concurrency || 5;
+  const source = options?.source || "all";
+  const startPage = options?.startPage || 1;
+  const concurrency = options?.concurrency || 4;
+  isBulkSyncCancelled = false;
 
-  console.log(`\n?? [Bulk Seeder] B?t d?u d?ng b? 30.000 phim t? Page ${startPage}...`);
+  clearLiveLogs(); // Xóa sạch log cũ, tạo session terminal mới
+  console.log(`\n🚀 [Bulk Seeder] Bắt đầu cào Full [Nguồn: ${source}] từ Page ${startPage}...`);
+  addLiveLog(`🚀 [KHỞI ĐỘNG BULK SEEDER] Nguồn: ${source.toUpperCase()} | Bắt đầu từ trang ${startPage}`, "info");
 
-  // L?y t?ng s? trang t? page 1
-  const firstPageRes = await fetchKKPhimUpdatedPage(1);
-  const totalPages = options?.maxPages || firstPageRes?.pagination.totalPages || 1300;
-  const totalItems = firstPageRes?.pagination.totalItems || 30000;
-
-  console.log(`?? T?ng s? trang: ${totalPages} | U?c tÃ­nh phim: ~${totalItems}`);
-
-  // 1. Ã?ng b? Taxonomies tru?c
   await syncTaxonomies();
 
-  let totalSynced = state.total_seeded || 0;
+  const sourcesToRun: Array<"kkphim" | "vsmov" | "nguonc"> =
+    source === "all" ? ["kkphim", "vsmov", "nguonc"] : [source];
 
-  for (let page = startPage; page <= totalPages; page++) {
-    console.log(`\n?? [Ãang cÃ o Page ${page}/${totalPages}]...`);
-    const pageData = await fetchKKPhimUpdatedPage(page);
+  let totalSynced = 0;
 
-    if (!pageData || !pageData.items || pageData.items.length === 0) {
-      console.warn(`?? Page ${page} khÃ´ng cÃ³ d? li?u ho?c l?i m?ng, ti?p t?c trang sau.`);
-      continue;
+  for (const src of sourcesToRun) {
+    if (isBulkSyncCancelled) {
+      console.log("[Bulk Seeder] Đã tạm dừng.");
+      break;
     }
 
-    const items = pageData.items;
+    const prefix: "KK" | "VS" | "NC" =
+      src === "kkphim" ? "KK" : src === "vsmov" ? "VS" : "NC";
 
-    // X? lÃ½ theo t?ng chunk concurrency (5 phim cÃ¹ng lÃºc)
-    for (let i = 0; i < items.length; i += concurrency) {
-      const chunk = items.slice(i, i + concurrency);
-
-      await Promise.all(
-        chunk.map(async (item) => {
-          if (!item.slug) return;
-
-          // Ki?m tra phim dÃ£ cÃ³ vÃ  chua thay d?i -> skip
-          const existing = await prisma.movie.findUnique({
-            where: { slug: item.slug },
-            select: { id: true, server_modified: true },
-          });
-
-          const remoteMod = item.modified?.time ? new Date(item.modified.time).getTime() : 0;
-          const localMod = existing?.server_modified ? new Date(existing.server_modified).getTime() : 0;
-
-          if (existing && localMod >= remoteMod && remoteMod > 0) {
-            return;
-          }
-
-          const detail = await fetchKKPhimMovieDetail(item.slug);
-          if (detail) {
-            const ok = await upsertMovieDetail(detail);
-            if (ok) totalSynced++;
-          }
-        })
-      );
-
-      // Delay nh? 100ms gi?a cÃ¡c chunk d? an toÃ n tuy?t d?i
-      await new Promise((r) => setTimeout(r, 100));
+    // Lấy tổng số trang thực tế của từng nguồn
+    let totalPages = options?.maxPages || (src === "nguonc" ? 3400 : src === "kkphim" ? 1300 : 900);
+    try {
+      if (src === "kkphim") {
+        const first = await fetchKKPhimUpdatedPage(1);
+        if (first?.pagination?.totalPages) {
+          totalPages = options?.maxPages ? Math.min(first.pagination.totalPages, options.maxPages) : first.pagination.totalPages;
+        }
+      } else if (src === "vsmov") {
+        const first = await fetchVSMovUpdatedPage(1);
+        if (first?.pagination?.totalPages) {
+          totalPages = options?.maxPages ? Math.min(first.pagination.totalPages, options.maxPages) : first.pagination.totalPages;
+        }
+      } else if (src === "nguonc") {
+        const first = await fetchNguonCUpdatedPage(1);
+        if (first?.pagination?.totalPages) {
+          totalPages = options?.maxPages ? Math.min(first.pagination.totalPages, options.maxPages) : first.pagination.totalPages;
+        }
+      }
+    } catch (err: any) {
+      console.warn(`[SyncBulk] Không lấy được totalPages cho ${src}, dùng fallback: ${totalPages}`);
     }
 
-    // Luu tr?ng thÃ¡i sau m?i trang d? cÃ³ th? resume n?u cÃºp di?n/m?t m?ng
-    saveSyncState({
-      last_seed_page: page + 1,
-      total_seeded: totalSynced,
-      last_sync_time: new Date().toISOString(),
-    });
+    addLiveLog(`👉 [${src.toUpperCase()}] Tổng số trang: ${totalPages}. Bắt đầu cào từ trang ${startPage}...`, "info");
 
-    const percent = (((page / totalPages) * 100).toFixed(1) + "%");
-    console.log(`  ?? [Ti?n d?: ${percent}] ÃÃ£ luu ${totalSynced} phim vÃ o Database.`);
+    for (let page = startPage; page <= totalPages; page++) {
+      if (isBulkSyncCancelled) break;
 
-    options?.onProgress?.({
-      currentPage: page,
-      totalPages,
-      syncedCount: totalSynced,
-      percent,
-    });
+      let items: any[] = [];
+      if (src === "kkphim") {
+        const p = await fetchKKPhimUpdatedPage(page);
+        items = p?.items || [];
+      } else if (src === "vsmov") {
+        const p = await fetchVSMovUpdatedPage(page);
+        items = p?.items || [];
+      } else if (src === "nguonc") {
+        const p = await fetchNguonCUpdatedPage(page);
+        items = p?.items || [];
+      }
+
+      if (items.length === 0) continue;
+
+      for (let i = 0; i < items.length; i += concurrency) {
+        if (isBulkSyncCancelled) break;
+        const chunk = items.slice(i, i + concurrency);
+
+        await Promise.all(
+          chunk.map(async (item) => {
+            if (!item.slug) return;
+            let detail: KKPhimDetailResponse | null = null;
+            if (src === "kkphim") detail = await fetchKKPhimMovieDetail(item.slug);
+            else if (src === "vsmov") detail = await fetchVSMovMovieDetail(item.slug);
+            else if (src === "nguonc") detail = await fetchNguonCMovieDetail(item.slug);
+
+            if (detail) {
+              const res = await upsertMovieDetail(detail, prefix);
+              if (res.success) {
+                totalSynced++;
+                if (res.isNew) {
+                  addLiveLog(`[+ MỚI] ${item.name} [${prefix}] (Trang ${page})`, "new");
+                } else {
+                  addLiveLog(`[~ CẬP NHẬT] ${item.name} [${prefix}] (Trang ${page})`, "update");
+                }
+              }
+            }
+          })
+        );
+
+        await new Promise((r) => setTimeout(r, 60));
+      }
+
+      const percentNum = Math.min(100, Math.max(0, Math.round(((page - startPage + 1) / (totalPages - startPage + 1)) * 100)));
+      const percent = `${percentNum}%`;
+
+      options?.onProgress?.({
+        currentPage: page,
+        totalPages,
+        syncedCount: totalSynced,
+        percent,
+        source: src,
+      });
+
+      saveSyncState({
+        last_seed_page: page + 1,
+        total_seeded: totalSynced,
+        last_sync_time: new Date().toISOString(),
+        is_running: !isBulkSyncCancelled,
+        current_source: src,
+        current_page: page,
+        total_pages: totalPages,
+        percent,
+        percent_num: percentNum,
+      });
+    }
   }
 
-  console.log(`\n?? [Bulk Seeder] HoÃ n thÃ nh d?ng b? toÃ n b? ${totalSynced} phim!`);
+  saveSyncState({
+    last_seed_page: startPage,
+    total_seeded: totalSynced,
+    last_sync_time: new Date().toISOString(),
+    is_running: false,
+    percent: "100%",
+    percent_num: 100,
+  });
+
+  addLiveLog(`🎉 Hoàn tất cào Full! Đã lưu tổng cộng ${totalSynced} phim vào Database.`, "info");
+  console.log(`\n🎉 [Bulk Seeder] Hoàn thành đồng bộ ${totalSynced} phim!`);
 }
 
+/**
+ * 5. Gộp thủ công 2 phim trong Database
+ */
+export async function mergeMoviesManually(sourceSlug: string, targetSlug: string): Promise<{ success: boolean; msg: string }> {
+  if (!sourceSlug || !targetSlug || sourceSlug === targetSlug) {
+    return { success: false, msg: "Slug nguồn và slug đích không hợp lệ!" };
+  }
 
+  const [sourceMovie, targetMovie] = await Promise.all([
+    prisma.movie.findUnique({
+      where: { slug: sourceSlug },
+      include: { episodes: { include: { server_data: true } } },
+    }),
+    prisma.movie.findUnique({
+      where: { slug: targetSlug },
+      include: { episodes: { include: { server_data: true } } },
+    }),
+  ]);
+
+  if (!sourceMovie || !targetMovie) {
+    return { success: false, msg: "Không tìm thấy phim nguồn hoặc phim đích trong Database!" };
+  }
+
+  for (const srv of sourceMovie.episodes) {
+    const existingTargetServer = await prisma.episodeServer.findFirst({
+      where: { movie_id: targetMovie.id, server_name: srv.server_name },
+    });
+
+    if (existingTargetServer) {
+      for (const ep of srv.server_data) {
+        const existingEp = await prisma.episode.findFirst({
+          where: { server_id: existingTargetServer.id, slug: ep.slug },
+        });
+        if (!existingEp) {
+          await prisma.episode.create({
+            data: {
+              server_id: existingTargetServer.id,
+              name: ep.name,
+              slug: ep.slug,
+              filename: ep.filename,
+              link_m3u8: ep.link_m3u8,
+              link_embed: ep.link_embed,
+            },
+          });
+        }
+      }
+    } else {
+      await prisma.episodeServer.update({
+        where: { id: srv.id },
+        data: { movie_id: targetMovie.id },
+      });
+    }
+  }
+
+  await prisma.movie.delete({
+    where: { id: sourceMovie.id },
+  });
+
+  const allTargetServers = await prisma.episodeServer.findMany({
+    where: { movie_id: targetMovie.id },
+    include: { server_data: true },
+  });
+
+  const detectedLangs = new Set<string>();
+  let maxEps = 0;
+
+  allTargetServers.forEach((srv) => {
+    const sNameLower = srv.server_name.toLowerCase();
+    if (sNameLower.includes("vietsub")) detectedLangs.add("Vietsub");
+    if (sNameLower.includes("thuyết minh")) detectedLangs.add("Thuyết Minh");
+    if (sNameLower.includes("lồng tiếng")) detectedLangs.add("Lồng Tiếng");
+    if (sNameLower.includes("song ngữ")) detectedLangs.add("Song Ngữ");
+    if (srv.server_data.length > maxEps) maxEps = srv.server_data.length;
+  });
+
+  const order = ["Vietsub", "Thuyết Minh", "Lồng Tiếng", "Song Ngữ"];
+  const sortedLangs = Array.from(detectedLangs).sort(
+    (a, b) => order.indexOf(a) - order.indexOf(b)
+  );
+
+  await prisma.movie.update({
+    where: { id: targetMovie.id },
+    data: {
+      lang: sortedLangs.join(" + "),
+      episode_current: targetMovie.type !== "single" && maxEps > 0 ? `Tập ${maxEps}` : targetMovie.episode_current,
+    },
+  });
+
+  addLiveLog(`Đã gộp thủ công phim "${sourceMovie.name}" (${sourceSlug}) sang "${targetMovie.name}" (${targetSlug})`, "info");
+
+  return { success: true, msg: `Đã gộp thành công toàn bộ server từ "${sourceMovie.name}" sang "${targetMovie.name}"!` };
+}
