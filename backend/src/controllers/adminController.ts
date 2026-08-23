@@ -163,3 +163,89 @@ export async function getSyncLogs(req: Request, res: Response) {
     return res.status(500).json({ status: false, msg: error.message });
   }
 }
+
+export async function getSystemStats(req: Request, res: Response) {
+  try {
+    const [
+      totalMovies,
+      singleCount,
+      seriesCount,
+      hoathinhCount,
+      tvshowsCount,
+      chieurapCount,
+      totalEpisodes,
+      totalServers,
+      totalCategories,
+      totalCountries,
+      recentlyUpdated,
+      topViews,
+    ] = await Promise.all([
+      prisma.movie.count(),
+      prisma.movie.count({ where: { type: "single" } }),
+      prisma.movie.count({ where: { type: "series" } }),
+      prisma.movie.count({ where: { type: "hoathinh" } }),
+      prisma.movie.count({ where: { type: "tvshows" } }),
+      prisma.movie.count({ where: { chieurap: true } }),
+      prisma.episode.count(),
+      prisma.episodeServer.count(),
+      prisma.category.count(),
+      prisma.country.count(),
+      prisma.movie.findMany({
+        take: 6,
+        orderBy: { updated_at: "desc" },
+        select: {
+          id: true,
+          name: true,
+          origin_name: true,
+          slug: true,
+          thumb_url: true,
+          poster_url: true,
+          year: true,
+          type: true,
+          episode_current: true,
+          quality: true,
+          updated_at: true,
+          server_modified: true,
+        },
+      }),
+      prisma.movie.findMany({
+        take: 5,
+        orderBy: { view_count: "desc" },
+        select: {
+          id: true,
+          name: true,
+          slug: true,
+          thumb_url: true,
+          poster_url: true,
+          view_count: true,
+          year: true,
+          quality: true,
+          type: true,
+        },
+      }),
+    ]);
+
+    return res.json({
+      status: true,
+      data: {
+        totalMovies,
+        breakdown: {
+          single: singleCount,
+          series: seriesCount,
+          hoathinh: hoathinhCount,
+          tvshows: tvshowsCount,
+          chieurap: chieurapCount,
+        },
+        totalEpisodes,
+        totalServers,
+        totalCategories,
+        totalCountries,
+        recentlyUpdated,
+        topViews,
+      },
+    });
+  } catch (error: any) {
+    return res.status(500).json({ status: false, msg: error.message });
+  }
+}
+

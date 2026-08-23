@@ -1,6 +1,6 @@
 "use client";
 import { useState, useTransition, useEffect } from "react";
-import { addExclusiveMovie, previewTMDB, importMovieFromApi } from "@/app/actions/adminMovies";
+import { addExclusiveMovie, previewTMDB } from "@/app/actions/adminMovies";
 import { useRouter } from "next/navigation";
 import toast from "react-hot-toast";
 import Link from "next/link";
@@ -9,11 +9,7 @@ export default function NewMoviePage() {
     const router = useRouter();
     const [isPending, startTransition] = useTransition();
 
-    // Tabs
-    const [activeTab, setActiveTab] = useState<"manual" | "import">("manual");
-
     // Form states
-    const [importUrl, setImportUrl] = useState("");
     const [tmdbId, setTmdbId] = useState("");
     const [type, setType] = useState<"single" | "series">("single");
     const [slug, setSlug] = useState("");
@@ -27,152 +23,15 @@ export default function NewMoviePage() {
     const [phimApiStatus, setPhimApiStatus] = useState<"checking" | "found" | "not_found" | "idle">("idle");
     const [phimApiData, setPhimApiData] = useState<any>(null);
 
-    // Helpers for Import images
-    const getImportImages = () => {
-        if (!importData) return { poster_url: "", thumb_url: "" };
-        const movieData = importData.data?.item || importData.movie || {};
-        const domain = (
-            importData.data?.APP_DOMAIN_CDN_IMAGE || 
-            importData.APP_DOMAIN_CDN_IMAGE || 
-            importData.data?.pathImage || 
-            importData.pathImage || 
-            "https://phimimg.com"
-        ).replace(/\/$/, "");
-        const isOPhim = domain.includes("ophim") || (importData.data?.seoOnPage?.og_url?.includes("ophim") ?? false) || (importData.data?.seoOnPage?.seoSchema?.url?.includes("ophim") ?? false);
-        const isVsMov = importUrl.includes("vsmov") || domain.includes("vsmov") || (importData.data?.seoOnPage?.og_url?.includes("vsmov") ?? false) || (importData.data?.seoOnPage?.seoSchema?.url?.includes("vsmov") ?? false);
-
-        const buildUrl = (path: string) => {
-            if (!path) return "";
-            let fullUrl = path;
-            if (!path.startsWith("http://") && !path.startsWith("https://")) {
-                const cleanPath = path.startsWith("/") ? path.slice(1) : path;
-                if (cleanPath.startsWith("uploads/")) {
-                    fullUrl = `${domain}/${cleanPath}`;
-                } else {
-                    fullUrl = `${domain}/uploads/movies/${cleanPath}`;
-                }
-            }
-            if (fullUrl.includes("wsrv.nl")) return fullUrl;
-            return `https://wsrv.nl/?url=${encodeURIComponent(fullUrl)}&output=webp`;
-        };
-
-        const rawPoster = movieData.poster_url || "";
-        const rawThumb = movieData.thumb_url || "";
-
-        if (isOPhim || isVsMov) {
-            return {
-                poster_url: buildUrl(rawThumb || rawPoster),
-                thumb_url: buildUrl(rawPoster || rawThumb)
-            };
-        }
-
-        return {
-            poster_url: buildUrl(rawPoster || rawThumb),
-            thumb_url: buildUrl(rawThumb || rawPoster)
-        };
-    };
-
-    // Helper to parse movie data for preview UI
-    const getParsedPreviewData = () => {
-        if (!importData) return null;
-        const rawMovie = importData.data?.item || importData.movie || {};
-        
-        let parsedCategory = rawMovie.category || [];
-        let parsedCountry = rawMovie.country || [];
-        let parsedYear = rawMovie.year;
-        
-        if (rawMovie.category && typeof rawMovie.category === 'object' && !Array.isArray(rawMovie.category)) {
-            const catList: any[] = [];
-            const countryList: any[] = [];
-            Object.values(rawMovie.category).forEach((group: any) => {
-                if (group.group?.name === "Thể loại" && group.list) {
-                    catList.push(...group.list);
-                } else if (group.group?.name === "Quốc gia" && group.list) {
-                    countryList.push(...group.list);
-                } else if (group.group?.name === "Năm" && group.list) {
-                    const parsed = parseInt(group.list[0]?.name);
-                    if (!isNaN(parsed)) parsedYear = parsed;
-                }
-            });
-            parsedCategory = catList;
-            if (countryList.length > 0) parsedCountry = countryList;
-        }
-
-        const episodes = rawMovie.episodes || importData.episodes || [];
-        const firstServerEps = episodes[0]?.server_data || episodes[0]?.items || [];
-
-        return {
-            name: rawMovie.name,
-            origin_name: rawMovie.origin_name || rawMovie.original_name || rawMovie.name,
-            year: parsedYear,
-            quality: rawMovie.quality || "HD",
-            lang: rawMovie.lang || "Vietsub",
-            episode_current: rawMovie.episode_current || rawMovie.current_episode || "Tập mới",
-            time: rawMovie.time,
-            server_name: episodes[0]?.server_name || "",
-            country: parsedCountry,
-            category: parsedCategory,
-            director: typeof rawMovie.director === 'string' ? rawMovie.director.split(',').map((s:string)=>s.trim()) : (rawMovie.director || []),
-            actor: typeof rawMovie.actor === 'string' ? rawMovie.actor.split(',').map((s:string)=>s.trim()) : (rawMovie.actor || rawMovie.casts?.split(',').map((s:string)=>s.trim()) || []),
-            trailer_url: rawMovie.trailer_url,
-            content: rawMovie.content || rawMovie.description || "",
-            episodes_list: firstServerEps
-        };
-    };
-
-    // Link Type State
+    // Single Movie Details
     const [linkType, setLinkType] = useState<"m3u8" | "embed" | "both">("m3u8");
 
-    // Starred & Exclusive State
+    // Starred Hero Slider states
     const [isStarred, setIsStarred] = useState(false);
-    const [expiresDays, setExpiresDays] = useState("3");
+    const [expiresDays, setExpiresDays] = useState<number | string>("");
+
+    // Custom tag độc quyền
     const [subDocquyenManual, setSubDocquyenManual] = useState(true);
-    const [subDocquyenImport, setSubDocquyenImport] = useState(false);
-
-    // Import states
-    const [importData, setImportData] = useState<any>(null);
-    const [isFetchingImport, setIsFetchingImport] = useState(false);
-
-    const handleFetchImport = async () => {
-        if (!importUrl) {
-            toast.error("Vui lòng nhập Link API");
-            return;
-        }
-        setIsFetchingImport(true);
-        try {
-            const res = await fetch(importUrl);
-            const data = await res.json();
-            if (data.status) {
-                setImportData(data);
-                toast.success("Đã cào được dữ liệu phim!");
-            } else {
-                toast.error("Dữ liệu không hợp lệ");
-            }
-        } catch (err) {
-            toast.error("Lỗi khi fetch data từ API");
-        } finally {
-            setIsFetchingImport(false);
-        }
-    };
-
-    const handleImportSubmit = async (e: React.FormEvent<HTMLFormElement>) => {
-        e.preventDefault();
-        const formData = new FormData(e.currentTarget);
-        const data = Object.fromEntries(formData.entries()) as Record<string, string>;
-
-        startTransition(async () => {
-            try {
-                const res = await importMovieFromApi(importUrl, data);
-                if (res.error) toast.error(res.error);
-                else {
-                    toast.success("Import phim thành công!");
-                    router.push("/admin/dashboard");
-                }
-            } catch (err: any) {
-                toast.error(`Lỗi hệ thống: ${err.message || "Lỗi import"}`);
-            }
-        });
-    };
 
     useEffect(() => {
         if (!slug.trim()) {
@@ -201,12 +60,19 @@ export default function NewMoviePage() {
                 setPhimApiStatus("not_found");
                 setPhimApiData(null);
             }
-        }, 800);
+        }, 500);
         return () => clearTimeout(timer);
     }, [slug]);
 
-    const generateSlug = (str: string) => {
-        return str.toLowerCase().normalize("NFD").replace(/[\u0300-\u036f]/g, "").replace(/đ/g, "d").replace(/[^a-z0-9 -]/g, "").replace(/\s+/g, "-").replace(/-+/g, "-").trim();
+    const handleFillFromPhimApi = () => {
+        if (!phimApiData) return;
+        const item = phimApiData.data?.item || phimApiData.movie;
+        if (!item) return;
+
+        if (item.type) {
+            setType(item.type === 'series' || item.type === 'hoathinh' || item.type === 'tvshows' ? 'series' : 'single');
+        }
+        toast.success("Đã tự động lấy dữ liệu từ PhimAPI!");
     };
 
     const handlePreview = async (id: string) => {
@@ -228,7 +94,7 @@ export default function NewMoviePage() {
                 const res = await addExclusiveMovie(data);
                 if (res.error) toast.error(res.error);
                 else {
-                    toast.success("Thêm phim thành công!");
+                    toast.success("Thêm phim độc quyền thành công!");
                     router.push("/admin/dashboard");
                 }
             } catch (err: any) {
@@ -241,36 +107,32 @@ export default function NewMoviePage() {
         <div className="bg-[#0F1115] min-h-screen text-white">
             <header className="bg-[#0F1115] border-b border-white/10 sticky top-0 z-10">
                 <div className="container mx-auto px-4 h-16 flex items-center gap-4">
-                    <Link href="/admin/dashboard" className="text-gray-400 hover:text-white transition flex items-center gap-2">
-                        <i className="fa-solid fa-arrow-left"></i> Quay lại
+                    <Link href="/admin/movies" className="text-gray-400 hover:text-white transition flex items-center gap-2">
+                        <i className="fa-solid fa-arrow-left"></i> Danh sách phim
                     </Link>
-                    <span className="text-white font-medium border-l border-white/20 pl-4">Thêm Phim Mới</span>
+                    <span className="text-white font-medium border-l border-white/20 pl-4">Đăng Phim Độc Quyền</span>
                 </div>
             </header>
             
             <main className="container mx-auto px-4 py-8 max-w-4xl">
-                <div className="flex gap-2 mb-6">
-                    <button 
-                        onClick={() => setActiveTab('manual')}
-                        className={`px-6 py-2 rounded-lg font-medium transition ${activeTab === 'manual' ? 'bg-[#D497FF] text-black shadow-lg' : 'bg-[#0F1115] text-gray-400 hover:bg-white/5 border border-white/10'}`}
-                    >
-                        Thêm Thủ Công
-                    </button>
-                    <button 
-                        onClick={() => setActiveTab('import')}
-                        className={`px-6 py-2 rounded-lg font-medium transition flex items-center gap-2 ${activeTab === 'import' ? 'bg-amber-600 text-white shadow-lg' : 'bg-[#0F1115] text-gray-400 hover:bg-white/5 border border-white/10'}`}
-                    >
-                        <i className="fa-solid fa-cloud-arrow-down"></i> Import từ API OPhim/KKPhim
-                    </button>
-                </div>
+                <div className="bg-[#0F1115] p-6 md:p-8 rounded-2xl border border-white/10 shadow-2xl">
+                    <div className="mb-6 pb-4 border-b border-white/10 flex items-center justify-between">
+                        <div>
+                            <h2 className="text-xl font-bold text-white flex items-center gap-2">
+                                <span className="text-amber-400">👑</span> Thêm Phim Độc Quyền (CMS)
+                            </h2>
+                            <p className="text-xs text-white/50 mt-1">Phim lưu trên Supabase Cloud, hỗ trợ link streaming R2/B2/Embed độc quyền</p>
+                        </div>
+                        <span className="text-xs px-3 py-1 rounded-full bg-purple-500/10 text-purple-400 border border-purple-500/20 font-semibold">
+                            Độc Quyền LoFilm
+                        </span>
+                    </div>
 
-                <div className="bg-[#0F1115] p-6 md:p-8 rounded-xl border border-white/10 shadow-2xl">
-                    {activeTab === 'manual' ? (
                     <form onSubmit={handleSaveMovie} className="flex flex-col gap-6">
                         <div className="grid grid-cols-1 md:grid-cols-2 gap-6">
                             <div>
                                 <label className="text-gray-400 text-sm mb-1.5 block">Loại phim</label>
-                                <select name="type" value={type} onChange={(e) => setType(e.target.value as any)} className="w-full bg-[#0F1115] text-white rounded-lg p-3 focus:outline-none focus:ring-2 focus:ring-[#D497FF]">
+                                <select name="type" value={type} onChange={(e) => setType(e.target.value as any)} className="w-full bg-[#0F1115] text-white rounded-lg p-3 focus:outline-none focus:ring-2 focus:ring-[#D497FF] border border-white/10">
                                     <option value="single">Phim Lẻ</option>
                                     <option value="series">Phim Bộ</option>
                                 </select>
@@ -280,8 +142,8 @@ export default function NewMoviePage() {
                                     TMDB ID {phimApiStatus === 'found' ? <span className="text-green-400 text-xs font-normal ml-2">(Tùy chọn)</span> : <span className="text-red-400 text-xs font-normal ml-2">(*) Bắt buộc</span>}
                                 </label>
                                 <div className="flex gap-2">
-                                    <input name="tmdb_id" type="text" value={tmdbId} onChange={e => setTmdbId(e.target.value)} required={phimApiStatus !== 'found'} className="w-full bg-[#0F1115] text-white rounded-lg p-3 focus:outline-none focus:ring-2 focus:ring-[#D497FF]" placeholder="Ví dụ: 1139087" />
-                                    <button type="button" onClick={() => handlePreview(tmdbId)} disabled={isChecking} className="bg-[#D497FF] hover:bg-[#D497FF] px-5 rounded-lg transition shrink-0 font-medium">
+                                    <input name="tmdb_id" type="text" value={tmdbId} onChange={e => setTmdbId(e.target.value)} required={phimApiStatus !== 'found'} className="w-full bg-[#0F1115] text-white rounded-lg p-3 focus:outline-none focus:ring-2 focus:ring-[#D497FF] border border-white/10" placeholder="Ví dụ: 1139087" />
+                                    <button type="button" onClick={() => handlePreview(tmdbId)} disabled={isChecking} className="bg-[#D497FF] hover:bg-[#D497FF]/90 text-black px-5 rounded-lg transition shrink-0 font-medium">
                                         {isChecking ? <i className="fa-solid fa-spinner fa-spin"></i> : "Check"}
                                     </button>
                                 </div>
@@ -302,23 +164,23 @@ export default function NewMoviePage() {
                         <div className="grid grid-cols-1 md:grid-cols-3 gap-6">
                             <div>
                                 <label className="text-gray-400 text-sm mb-1.5 block">Slug (URL Phim)</label>
-                                <input name="slug" type="text" value={slug} onChange={(e) => setSlug(e.target.value)} required className="w-full bg-[#0F1115] text-white rounded-lg p-3 focus:outline-none focus:ring-2 focus:ring-[#D497FF]" placeholder="ten-phim-viet-lien-khong-dau" />
+                                <input name="slug" type="text" value={slug} onChange={(e) => setSlug(e.target.value)} required className="w-full bg-[#0F1115] text-white rounded-lg p-3 focus:outline-none focus:ring-2 focus:ring-[#D497FF] border border-white/10" placeholder="ten-phim-viet-lien-khong-dau" />
                                 <div className="h-5 mt-1.5">
-                                    {phimApiStatus === 'checking' && <div className="text-gray-400 text-xs flex items-center gap-1"><i className="fa-solid fa-spinner fa-spin"></i> Đang kiểm tra PhimAPI...</div>}
-                                    {phimApiStatus === 'found' && <div className="text-green-400 text-xs flex items-center gap-1"><i className="fa-solid fa-check"></i> Đã có trên PhimAPI</div>}
-                                    {phimApiStatus === 'not_found' && <div className="text-red-400 text-xs flex items-center gap-1"><i className="fa-solid fa-xmark"></i> PhimAPI chưa có (Sẽ dùng thông tin từ TMDB)</div>}
+                                    {phimApiStatus === 'checking' && <div className="text-gray-400 text-xs flex items-center gap-1"><i className="fa-solid fa-spinner fa-spin"></i> Đang kiểm tra...</div>}
+                                    {phimApiStatus === 'found' && <div className="text-green-400 text-xs flex items-center gap-1"><i className="fa-solid fa-check"></i> Đã có trên hệ thống</div>}
+                                    {phimApiStatus === 'not_found' && <div className="text-amber-400 text-xs flex items-center gap-1"><i className="fa-solid fa-sparkles"></i> Phim mới (Dùng dữ liệu TMDB)</div>}
                                 </div>
                             </div>
                             <div>
                                 <label className="text-gray-400 text-sm mb-1.5 block">Trạng thái</label>
-                                <select name="status" value={status} onChange={(e) => setStatus(e.target.value)} className="w-full bg-[#0F1115] text-white rounded-lg p-3 focus:outline-none focus:ring-2 focus:ring-[#D497FF]">
+                                <select name="status" value={status} onChange={(e) => setStatus(e.target.value)} className="w-full bg-[#0F1115] text-white rounded-lg p-3 focus:outline-none focus:ring-2 focus:ring-[#D497FF] border border-white/10">
                                     <option value="draft">Bản nháp</option>
                                     <option value="published">Công khai</option>
                                 </select>
                             </div>
                             <div>
                                 <label className="text-gray-400 text-sm mb-1.5 block">Tag ngôn ngữ</label>
-                                <select name="lang_tag" value={langTag} onChange={(e) => setLangTag(e.target.value)} className="w-full bg-[#0F1115] text-white rounded-lg p-3 focus:outline-none focus:ring-2 focus:ring-[#D497FF]">
+                                <select name="lang_tag" value={langTag} onChange={(e) => setLangTag(e.target.value)} className="w-full bg-[#0F1115] text-white rounded-lg p-3 focus:outline-none focus:ring-2 focus:ring-[#D497FF] border border-white/10">
                                     {subDocquyenManual ? (
                                         <>
                                             <option value="Vietsub Độc Quyền">Vietsub Độc Quyền</option>
@@ -363,7 +225,7 @@ export default function NewMoviePage() {
                         </div>
 
                         {/* Starred UI */}
-                        <div className="bg-[#0F1115]/50 border border-[#D497FF]/30 rounded-xl p-5 md:p-6 mt-2">
+                        <div className="bg-[#0F1115]/50 border border-[#D497FF]/30 rounded-xl p-5 md:p-6">
                             <label className="flex items-center gap-3 cursor-pointer group w-fit">
                                 <div className="relative flex items-center justify-center w-6 h-6">
                                     <input 
@@ -403,7 +265,7 @@ export default function NewMoviePage() {
                         </div>
 
                         {type === 'single' && (
-                            <div className="border border-white/10 rounded-xl p-5 md:p-6 mt-2 bg-[#0F1115]/50">
+                            <div className="border border-white/10 rounded-xl p-5 md:p-6 bg-[#0F1115]/50">
                                 <h4 className="font-semibold mb-4 text-sm text-gray-300 uppercase tracking-wider">Thông tin Video (Phim Lẻ)</h4>
                                 
                                 <div className="bg-[#0F1115]/50 p-3 rounded-lg border border-white/5 mb-5">
@@ -428,13 +290,13 @@ export default function NewMoviePage() {
                                     {(linkType === 'm3u8' || linkType === 'both') && (
                                         <div>
                                             <label className="text-gray-400 text-sm mb-1.5 block">Link M3U8 (Video Streaming - R2/B2)</label>
-                                            <input name="link_m3u8" type="url" className="w-full bg-[#0F1115] text-white rounded-lg p-3 focus:outline-none focus:ring-2 focus:ring-[#D497FF]" placeholder="https://pub-xxxx.r2.dev/phim-xxx/index.m3u8" />
+                                            <input name="link_m3u8" type="url" className="w-full bg-[#0F1115] text-white rounded-lg p-3 focus:outline-none focus:ring-2 focus:ring-[#D497FF] border border-white/10" placeholder="https://pub-xxxx.r2.dev/phim-xxx/index.m3u8" />
                                         </div>
                                     )}
                                     {(linkType === 'embed' || linkType === 'both') && (
                                         <div>
                                             <label className="text-gray-400 text-sm mb-1.5 block">Link Embed (Dự phòng - Loadvid)</label>
-                                            <input name="link_embed" type="url" className="w-full bg-[#0F1115] text-white rounded-lg p-3 focus:outline-none focus:ring-2 focus:ring-[#D497FF]" placeholder="https://cdn.loadvid.com/..." />
+                                            <input name="link_embed" type="url" className="w-full bg-[#0F1115] text-white rounded-lg p-3 focus:outline-none focus:ring-2 focus:ring-[#D497FF] border border-white/10" placeholder="https://cdn.loadvid.com/..." />
                                         </div>
                                     )}
                                 </div>
@@ -447,216 +309,24 @@ export default function NewMoviePage() {
                                         <textarea
                                             name="subtitle_tracks"
                                             rows={4}
-                                            className="w-full bg-[#0F1115] text-white rounded-lg p-3 text-sm font-mono focus:outline-none focus:ring-2 focus:ring-[#D497FF] placeholder:text-gray-600"
-                                            placeholder={`Tiếng Việt|https://r2.../film-vi.vtt\nEnglish|https://r2.../film-en.vtt\n\n(Mỗi dòng: Tên Ngôn ngữ|URL)`}
+                                            className="w-full bg-[#0F1115] text-white rounded-lg p-3 text-sm font-mono focus:outline-none focus:ring-2 focus:ring-[#D497FF] placeholder:text-gray-600 border border-white/10"
+                                            placeholder={`[\n  {"label": "Tiếng Việt", "src": "https://pub-xxxx.r2.dev/vi.vtt", "default": true},\n  {"label": "English", "src": "https://pub-xxxx.r2.dev/en.vtt"}\n]`}
                                         />
-                                        <p className="text-xs text-gray-500 mt-2">⚠️ Subtitle chỉ áp dụng khi xem bằng link M3U8.</p>
                                     </div>
                                 )}
                             </div>
                         )}
-                        
-                        {type === 'series' && (
-                            <div className="border border-white/10 rounded-xl p-5 md:p-6 mt-2 bg-[#0F1115]/50">
-                                <h4 className="font-semibold mb-2 text-sm text-gray-300 uppercase tracking-wider">Thêm Tập Phim</h4>
-                                <p className="text-sm text-gray-400 mb-4">Với phim bộ, sau khi Lưu Phim xong, bạn sẽ được chuyển đến trang Quản lý Tập Phim để thêm các tập.</p>
-                            </div>
-                        )}
 
-                        <div className="flex justify-end mt-4 pt-6 border-t border-white/10">
-                            <button type="submit" disabled={isPending} className="bg-[#D497FF] hover:bg-[#D497FF] px-8 py-3 rounded-lg font-medium transition text-black w-full md:w-auto shadow-lg shadow-[#D497FF]/20">
-                                {isPending ? <><i className="fa-solid fa-spinner fa-spin mr-2"></i> Đang lưu...</> : "Lưu Phim Mới"}
+                        <div className="flex justify-end gap-3 mt-4 pt-6 border-t border-white/10">
+                            <Link href="/admin/movies" className="px-5 py-2.5 rounded-lg border border-white/10 hover:bg-white/5 text-gray-300 font-medium transition">
+                                Hủy bỏ
+                            </Link>
+                            <button type="submit" disabled={isPending} className="bg-[#D497FF] hover:bg-[#D497FF]/90 text-black px-6 py-2.5 rounded-lg font-bold transition flex items-center gap-2">
+                                {isPending ? <i className="fa-solid fa-spinner fa-spin"></i> : <i className="fa-solid fa-save"></i>}
+                                Lưu Phim Độc Quyền
                             </button>
                         </div>
                     </form>
-                    ) : (
-                    <form onSubmit={handleImportSubmit} className="flex flex-col gap-6">
-                        <div className="bg-[#0F1115]/50 border border-[#D497FF]/30 rounded-xl p-5 md:p-6 mb-2">
-                            <h4 className="font-semibold mb-4 text-sm text-gray-300 uppercase tracking-wider">Nhập Link API (OPhim / KKPhim)</h4>
-                            <div className="flex flex-col md:flex-row gap-3">
-                                <input 
-                                    type="url" 
-                                    value={importUrl} 
-                                    onChange={(e) => setImportUrl(e.target.value)} 
-                                    required 
-                                    className="flex-1 bg-[#0F1115] text-white rounded-lg p-3 border border-white/10 focus:outline-none focus:ring-2 focus:ring-[#D497FF]" 
-                                    placeholder="VD: https://ophim1.com/v1/api/phim/san-lung-tho-ngoc" 
-                                />
-                                <button type="button" onClick={handleFetchImport} disabled={isFetchingImport} className="bg-amber-600 hover:bg-amber-700 px-6 py-3 rounded-lg transition font-medium text-white shadow-lg shrink-0">
-                                    {isFetchingImport ? <><i className="fa-solid fa-spinner fa-spin mr-2"></i> Đang lấy...</> : "Kiểm tra Dữ liệu"}
-                                </button>
-                            </div>
-                        </div>
-
-                        {importData && (
-                            <>
-                                <div className="border border-green-500/30 bg-green-500/5 p-4 md:p-6 rounded-xl flex flex-col gap-5 relative overflow-hidden">
-                                    <div className="absolute top-0 right-0 bg-green-500 text-white text-xs font-bold px-3 py-1 rounded-bl-lg z-10 flex items-center gap-1">
-                                        <i className="fa-solid fa-circle-check"></i> Dữ liệu hợp lệ
-                                    </div>
-                                    
-                                    <div className="flex flex-col lg:flex-row gap-5 items-start">
-                                        {/* Images Preview */}
-                                        <div className="flex flex-wrap gap-3 shrink-0">
-                                            <div className="flex flex-col gap-1">
-                                                <span className="text-[11px] text-gray-400 font-medium">Poster (Ảnh đứng)</span>
-                                                <img src={getImportImages().poster_url} alt="Poster" className="w-24 md:w-28 rounded-lg shadow-lg object-cover aspect-[2/3] border border-white/10" />
-                                            </div>
-                                            {getImportImages().thumb_url && (
-                                                <div className="flex flex-col gap-1">
-                                                    <span className="text-[11px] text-gray-400 font-medium">Thumb (Ảnh nằm)</span>
-                                                    <img src={getImportImages().thumb_url} alt="Thumb" className="w-40 md:w-44 rounded-lg shadow-lg object-cover aspect-video border border-white/10" />
-                                                </div>
-                                            )}
-                                        </div>
-
-                                        {/* Movie Info */}
-                                        <div className="flex-1 w-full">
-                                            <h3 className="text-xl md:text-2xl font-bold text-white mb-1">
-                                                {getParsedPreviewData()?.name}
-                                            </h3>
-                                            <p className="text-gray-400 text-sm mb-3">
-                                                {getParsedPreviewData()?.origin_name} {getParsedPreviewData()?.year ? `(${getParsedPreviewData()?.year})` : ""}
-                                            </p>
-
-                                            {/* Badges */}
-                                            <div className="flex flex-wrap gap-2 mb-4">
-                                                <span className="bg-[#D497FF]/20 border border-[#D497FF]/30 text-[#D497FF] px-2.5 py-0.5 rounded-md text-xs font-semibold">
-                                                    {getParsedPreviewData()?.quality}
-                                                </span>
-                                                <span className="bg-amber-500/20 border border-[#D497FF]/30 text-amber-400 px-2.5 py-0.5 rounded-md text-xs font-semibold">
-                                                    {getParsedPreviewData()?.lang}
-                                                </span>
-                                                <span className="bg-purple-500/20 border border-purple-500/30 text-purple-400 px-2.5 py-0.5 rounded-md text-xs font-semibold">
-                                                    {getParsedPreviewData()?.episode_current}
-                                                </span>
-                                                {getParsedPreviewData()?.time && (
-                                                    <span className="bg-emerald-500/20 border border-emerald-500/30 text-emerald-400 px-2.5 py-0.5 rounded-md text-xs font-semibold">
-                                                        <i className="fa-regular fa-clock mr-1"></i>
-                                                        {getParsedPreviewData()?.time}
-                                                    </span>
-                                                )}
-                                                {getParsedPreviewData()?.server_name && (
-                                                    <span className="bg-rose-500/20 border border-rose-500/30 text-rose-400 px-2.5 py-0.5 rounded-md text-xs font-semibold">
-                                                        <i className="fa-solid fa-server mr-1"></i>
-                                                        {getParsedPreviewData()?.server_name}
-                                                    </span>
-                                                )}
-                                            </div>
-
-                                            {/* Metadata Details Grid */}
-                                            <div className="grid grid-cols-1 md:grid-cols-2 gap-x-6 gap-y-2 text-xs bg-black/40 p-3.5 rounded-lg border border-white/5 mb-3">
-                                                <div>
-                                                    <span className="text-gray-400 font-medium">Quốc gia: </span>
-                                                    <span className="text-gray-200">
-                                                        {getParsedPreviewData()?.country?.length
-                                                            ? getParsedPreviewData()?.country.map((c: any) => c.name).join(", ")
-                                                            : "Đang cập nhật"}
-                                                    </span>
-                                                </div>
-                                                <div>
-                                                    <span className="text-gray-400 font-medium">Thể loại: </span>
-                                                    <span className="text-gray-200">
-                                                        {getParsedPreviewData()?.category?.length
-                                                            ? getParsedPreviewData()?.category.map((c: any) => c.name).join(", ")
-                                                            : "Đang cập nhật"}
-                                                    </span>
-                                                </div>
-                                                <div>
-                                                    <span className="text-gray-400 font-medium">Đạo diễn: </span>
-                                                    <span className="text-gray-200">
-                                                        {getParsedPreviewData()?.director?.filter(Boolean).join(", ") || "Đang cập nhật"}
-                                                    </span>
-                                                </div>
-                                                <div>
-                                                    <span className="text-gray-400 font-medium">Diễn viên: </span>
-                                                    <span className="text-gray-200 line-clamp-1">
-                                                        {getParsedPreviewData()?.actor?.filter(Boolean).join(", ") || "Đang cập nhật"}
-                                                    </span>
-                                                </div>
-                                                {getParsedPreviewData()?.trailer_url && (
-                                                    <div className="md:col-span-2">
-                                                        <span className="text-gray-400 font-medium">Trailer: </span>
-                                                        <a href={getParsedPreviewData()?.trailer_url} target="_blank" rel="noreferrer" className="text-[#D497FF] hover:underline">
-                                                            {getParsedPreviewData()?.trailer_url}
-                                                        </a>
-                                                    </div>
-                                                )}
-                                            </div>
-
-                                            {/* Overview content */}
-                                            <div className="text-xs text-gray-300 line-clamp-3 leading-relaxed">
-                                                {getParsedPreviewData()?.content?.replace(/<[^>]*>?/gm, '')}
-                                            </div>
-                                        </div>
-                                    </div>
-                                </div>
-
-                                <div className="grid grid-cols-1 md:grid-cols-3 gap-6 mt-2">
-                                    <div>
-                                        <label className="text-gray-400 text-sm mb-1.5 block">Trạng thái sau khi Import</label>
-                                        <select name="status" className="w-full bg-[#0F1115] text-white rounded-lg p-3 border border-white/10 focus:outline-none focus:ring-2 focus:ring-[#D497FF]">
-                                            <option value="published">Công khai (Hiển thị ngay)</option>
-                                            <option value="draft">Bản nháp (Ẩn)</option>
-                                        </select>
-                                    </div>
-                                    <div className="bg-[#0F1115]/50 border border-purple-500/30 rounded-xl p-4 flex flex-col justify-center">
-                                        <label className="flex items-center gap-3 cursor-pointer group">
-                                            <div className="relative flex items-center justify-center w-5 h-5 shrink-0">
-                                                <input 
-                                                    type="checkbox" 
-                                                    name="sub_docquyen" 
-                                                    checked={subDocquyenImport}
-                                                    onChange={(e) => setSubDocquyenImport(e.target.checked)}
-                                                    className="appearance-none w-5 h-5 border-2 border-purple-500/50 rounded bg-transparent checked:bg-purple-600 transition-colors peer cursor-pointer" 
-                                                />
-                                                <i className="fa-solid fa-check absolute text-white text-[10px] opacity-0 peer-checked:opacity-100 transition-opacity pointer-events-none"></i>
-                                            </div>
-                                            <div className="flex-1">
-                                                <span className="font-medium text-purple-400 group-hover:text-purple-300 transition text-sm">👑 Hiển thị Tag Độc Quyền</span>
-                                            </div>
-                                        </label>
-                                    </div>
-                                    <div className="bg-[#0F1115]/50 border border-[#D497FF]/30 rounded-xl p-4 flex flex-col justify-center">
-                                        <label className="flex items-center gap-3 cursor-pointer group">
-                                            <div className="relative flex items-center justify-center w-5 h-5 shrink-0">
-                                                <input 
-                                                    type="checkbox" 
-                                                    name="is_starred" 
-                                                    className="appearance-none w-5 h-5 border-2 border-[#D497FF]/50 rounded bg-transparent checked:bg-amber-500 transition-colors peer cursor-pointer" 
-                                                />
-                                                <i className="fa-solid fa-check absolute text-[#0F1115] text-[10px] opacity-0 peer-checked:opacity-100 transition-opacity pointer-events-none"></i>
-                                            </div>
-                                            <div className="flex-1">
-                                                <span className="font-medium text-amber-400 group-hover:text-amber-300 transition text-sm">⭐ Lên Hero Slider</span>
-                                            </div>
-                                        </label>
-                                    </div>
-                                </div>
-
-                                <div className="border border-white/10 rounded-xl p-5 mt-2 bg-[#0F1115]/30">
-                                    <h4 className="font-semibold mb-4 text-sm text-gray-300 uppercase tracking-wider flex justify-between items-center">
-                                        <span>Danh sách Tập Sẽ Import</span>
-                                        <span className="bg-white/10 px-2 py-1 rounded text-xs text-white">{getParsedPreviewData()?.episodes_list?.length || 0} tập</span>
-                                    </h4>
-                                    <div className="flex flex-wrap gap-2 max-h-40 overflow-y-auto custom-scrollbar pr-2">
-                                        {getParsedPreviewData()?.episodes_list?.map((ep: any, idx: number) => (
-                                            <span key={idx} className="bg-white/5 border border-white/10 text-gray-300 px-3 py-1.5 rounded-lg text-sm">
-                                                {ep.name}
-                                            </span>
-                                        ))}
-                                    </div>
-                                </div>
-
-                                <div className="flex justify-end mt-4 pt-6 border-t border-white/10">
-                                    <button type="submit" disabled={isPending} className="bg-amber-600 hover:bg-amber-700 px-8 py-3 rounded-lg font-medium transition text-white w-full md:w-auto shadow-lg shadow-amber-900/20">
-                                        {isPending ? <><i className="fa-solid fa-spinner fa-spin mr-2"></i> Đang Import...</> : <><i className="fa-solid fa-cloud-arrow-down mr-2"></i> Bắt Đầu Import Toàn Bộ</>}
-                                    </button>
-                                </div>
-                            </>
-                        )}
-                    </form>
-                    )}
                 </div>
             </main>
         </div>

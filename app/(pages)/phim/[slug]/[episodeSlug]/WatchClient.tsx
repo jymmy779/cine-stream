@@ -130,19 +130,22 @@ export default function WatchClient({
             let originalName = server.server_name.toLowerCase();
             let cleanName = "Vietsub";
 
-            const hasVietsub = originalName.includes('vietsub') || originalName.includes(' vs') || originalName.startsWith('vs');
-            const hasThuyetMinh = originalName.includes('thuyết minh') || originalName.includes(' tm') || originalName === 'tm';
-            const hasLongTieng = originalName.includes('lồng tiếng') || originalName.includes(' lt') || originalName === 'lt';
-            const hasRaw = originalName.includes('raw') || originalName.includes('nosub');
+            // Remove source suffixes to avoid confusion with language shorthands
+            const baseName = originalName.replace(/( op| nc| vs| kk)$/, '').replace(/#\d+$/, '').trim();
+
+            const hasVietsub = baseName.includes('vietsub') || baseName.includes(' vs') || baseName.startsWith('vs') || originalName.includes('vietsub');
+            const hasThuyetMinh = baseName.includes('thuyết minh') || baseName.includes(' tm') || baseName.startsWith('tm') || originalName.includes('thuyết minh');
+            const hasLongTieng = baseName.includes('lồng tiếng') || baseName.includes(' lt') || baseName.startsWith('lt') || originalName.includes('lồng tiếng');
+            const hasRaw = baseName.includes('raw') || baseName.includes('nosub') || originalName.includes('raw');
 
             // Nhận diện server đa bản audio (Vietsub + Lồng Tiếng / Thuyết Minh)
             const hasEpLongTieng = server.server_data?.some((ep: any) => (ep.name || '').toLowerCase().includes('lồng tiếng') || (ep.slug || '').includes('long-tieng'));
             const hasEpThuyetMinh = server.server_data?.some((ep: any) => (ep.name || '').toLowerCase().includes('thuyết minh') || (ep.slug || '').includes('thuyet-minh'));
 
             if ((hasVietsub && hasLongTieng) || (hasLongTieng && hasEpLongTieng) || (hasVietsub && hasEpLongTieng)) {
-                cleanName = 'Vietsub + LT';
+                cleanName = 'Vietsub + Lồng Tiếng';
             } else if ((hasVietsub && hasThuyetMinh) || (hasThuyetMinh && hasEpThuyetMinh) || (hasVietsub && hasEpThuyetMinh)) {
-                cleanName = 'Vietsub + TM';
+                cleanName = 'Vietsub + Thuyết Minh';
             } else if (hasThuyetMinh) {
                 cleanName = 'Thuyết Minh';
             } else if (hasLongTieng) {

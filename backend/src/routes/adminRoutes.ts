@@ -8,11 +8,13 @@ import {
   pauseBulkSyncHandler,
   mergeMoviesHandler,
   getSyncLogs,
+  getSystemStats,
 } from "../controllers/adminController.js";
 import { clearApiMemoryCache } from "../controllers/movieController.js";
 
 const router = Router();
 
+router.get("/stats", getSystemStats);
 router.post("/movies/import", importMovie);
 router.post("/movies/merge", mergeMoviesHandler);
 

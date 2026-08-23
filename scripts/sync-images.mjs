@@ -160,9 +160,23 @@ async function downloadImage(url, timeout = 15000) {
     }
 }
 
+/** Kiểm tra buffer có phải là dữ liệu ảnh hợp lệ không (tránh parse file HTML lỗi 404/500/Cloudflare) */
+function isValidImageBuffer(buf) {
+    if (!buf || !Buffer.isBuffer(buf) || buf.length < 64) return false;
+    const prefix = buf.subarray(0, 40).toString('utf8').trim().toLowerCase();
+    if (prefix.startsWith('<!doctype') || prefix.startsWith('<html') || prefix.startsWith('<?xml') || prefix.startsWith('<svg') || prefix.startsWith('<script') || prefix.startsWith('{"')) {
+        return false;
+    }
+    return true;
+}
+
 /** Convert buffer → WebP rồi upload lên R2 */
 async function convertAndUpload(srcBuffer, r2Key, width, quality = 80) {
-    const webpBuffer = await sharp(srcBuffer)
+    if (!isValidImageBuffer(srcBuffer)) {
+        throw new Error('Dữ liệu tải về không phải là file ảnh (HTML/Corrupt content)');
+    }
+
+    const webpBuffer = await sharp(srcBuffer, { failOnError: false })
         .resize({ width, withoutEnlargement: true })
         .webp({ quality })
         .toBuffer();
@@ -244,6 +258,9 @@ async function withRetry(fn, retries = 3, delay = 1000) {
         try {
             return await fn();
         } catch (err) {
+            if (err.message && err.message.includes('không phải là file ảnh')) {
+                throw err; // Không cần retry nếu server trả HTML
+            }
             if (i === retries - 1) throw err;
             await sleep(delay * (i + 1));
         }
@@ -275,62 +292,68 @@ function saveCheckpoint(page) {
 
 // ─── Process 1 phim: poster + thumb ───────────────────────────────────────────
 async function processMovieImages(movie, idx, total) {
-    const { slug, poster_url, thumb_url } = movie;
-    if (!slug) return;
-
-    const posterKey = `images/movies/${slug}-poster.webp`;
-    const thumbKey  = `images/movies/${slug}-thumb.webp`;
-
-    let posterDone = false, thumbDone = false;
-
-    // --- POSTER ---
     try {
-        if (newOnly && await existsOnR2(posterKey)) {
-            posterDone = true;
-            stats.movies.skipped++;
-        } else {
-            const url = normalizeImgUrl(poster_url);
-            if (url) {
-                await withRetry(async () => {
-                    const buf = await downloadImage(url);
-                    const size = await convertAndUpload(buf, posterKey, 400, 80);
-                    stats.movies.uploaded++;
-                    posterDone = true;
-                });
-            }
-        }
-    } catch (err) {
-        stats.movies.failed++;
-        saveFailedLog({ type: 'poster', slug, url: poster_url, key: posterKey, error: err.message });
-        console.error(`  ✗ poster [${slug}]: ${err.message}`);
-    }
+        if (!movie || !movie.slug) return;
+        const slug = String(movie.slug);
+        const { poster_url, thumb_url } = movie;
 
-    // --- THUMB ---
-    try {
-        if (newOnly && await existsOnR2(thumbKey)) {
-            thumbDone = true;
-            stats.movies.skipped++;
-        } else {
-            const url = normalizeImgUrl(thumb_url || poster_url);
-            if (url) {
-                await withRetry(async () => {
-                    const buf = await downloadImage(url);
-                    await convertAndUpload(buf, thumbKey, 800, 82);
-                    stats.movies.uploaded++;
-                    thumbDone = true;
-                });
-            }
-        }
-    } catch (err) {
-        stats.movies.failed++;
-        saveFailedLog({ type: 'thumb', slug, url: thumb_url || poster_url, key: thumbKey, error: err.message });
-        console.error(`  ✗ thumb  [${slug}]: ${err.message}`);
-    }
+        const posterKey = `images/movies/${slug}-poster.webp`;
+        const thumbKey  = `images/movies/${slug}-thumb.webp`;
 
-    const pct = Math.round((idx / total) * 100);
-    const pIcon = posterDone ? '✓' : '✗';
-    const tIcon = thumbDone  ? '✓' : '✗';
-    process.stdout.write(`\r[${idx}/${total}] ${pct}% | poster${pIcon} thumb${tIcon} | ${slug.slice(0, 30).padEnd(30)}`);
+        let posterDone = false, thumbDone = false;
+
+        // --- POSTER ---
+        try {
+            if (newOnly && await existsOnR2(posterKey)) {
+                posterDone = true;
+                stats.movies.skipped++;
+            } else {
+                const url = normalizeImgUrl(poster_url);
+                if (url) {
+                    await withRetry(async () => {
+                        const buf = await downloadImage(url);
+                        await convertAndUpload(buf, posterKey, 400, 80);
+                        stats.movies.uploaded++;
+                        posterDone = true;
+                    });
+                }
+            }
+        } catch (err) {
+            stats.movies.failed++;
+            saveFailedLog({ type: 'poster', slug, url: poster_url, key: posterKey, error: err.message });
+            console.error(`  ✗ poster [${slug}]: ${err.message}`);
+        }
+
+        // --- THUMB ---
+        try {
+            if (newOnly && await existsOnR2(thumbKey)) {
+                thumbDone = true;
+                stats.movies.skipped++;
+            } else {
+                const url = normalizeImgUrl(thumb_url || poster_url);
+                if (url) {
+                    await withRetry(async () => {
+                        const buf = await downloadImage(url);
+                        await convertAndUpload(buf, thumbKey, 800, 82);
+                        stats.movies.uploaded++;
+                        thumbDone = true;
+                    });
+                }
+            }
+        } catch (err) {
+            stats.movies.failed++;
+            saveFailedLog({ type: 'thumb', slug, url: thumb_url || poster_url, key: thumbKey, error: err.message });
+            console.error(`  ✗ thumb  [${slug}]: ${err.message}`);
+        }
+
+        const pct = Math.round((idx / total) * 100);
+        const pIcon = posterDone ? '✓' : '✗';
+        const tIcon = thumbDone  ? '✓' : '✗';
+        const displaySlug = slug ? slug.slice(0, 30).padEnd(30) : 'unknown';
+        process.stdout.write(`\r[${idx}/${total}] ${pct}% | poster${pIcon} thumb${tIcon} | ${displaySlug}`);
+    } catch (outerErr) {
+        console.error(`\n  ✗ Bỏ qua phim lỗi không xác định [${movie?.slug || idx}]:`, outerErr.message);
+    }
 }
 
 // ─── Process ảnh diễn viên cho 1 phim ─────────────────────────────────────────
@@ -671,6 +694,13 @@ async function main() {
     console.log(`    ✗ Failed   : ${stats.actors.failed}`);
     console.log('═══════════════════════════════════════════════════════\n');
 }
+
+process.on('unhandledRejection', (reason) => {
+    console.error('\n[UnhandledRejection Warning]:', reason?.message || reason);
+});
+process.on('uncaughtException', (err) => {
+    console.error('\n[UncaughtException Warning]:', err?.message || err);
+});
 
 main().catch(err => {
     console.error('\n[FATAL]', err);

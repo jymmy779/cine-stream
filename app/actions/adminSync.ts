@@ -49,6 +49,14 @@ export async function fetchSyncStatus() {
   return { error: data?.error || data?.msg || "Lỗi lấy trạng thái crawler" };
 }
 
+export async function fetchSystemStats() {
+  const data = await fetchBackend("/admin/stats");
+  if (data?.data) {
+    return { data: data.data };
+  }
+  return { error: data?.error || data?.msg || "Lỗi lấy thống kê hệ thống" };
+}
+
 export async function triggerInstantSyncAction(source: string = "all", pages: number = 2) {
   return await fetchBackend("/admin/sync/instant", {
     method: "POST",
