@@ -19,7 +19,7 @@ export function getCached(key: string): any | null {
   return item.data;
 }
 
-export function setCache(key: string, data: any, ttlSec: number = 60) {
+export function setCache(key: string, data: any, ttlSec: number = 300) {
   if (apiMemoryCache.size > 3000) {
     const firstKey = apiMemoryCache.keys().next().value;
     if (firstKey) apiMemoryCache.delete(firstKey);
@@ -292,8 +292,8 @@ export async function getMovieDetail(req: Request, res: Response) {
       episodes: sortedEpisodes,
     };
 
-    // Cache in RAM for 120 seconds
-    setCache(cacheKey, result, 120);
+    // Cache in RAM for 300 seconds (5 phút)
+    setCache(cacheKey, result, 300);
 
     return res.json(result);
   } catch (error: any) {
@@ -437,8 +437,8 @@ export async function getCatalog(req: Request, res: Response) {
       },
     };
 
-    // Cache in RAM for 60 seconds
-    setCache(cacheKey, result, 60);
+    // Cache in RAM for 300 seconds (5 phút)
+    setCache(cacheKey, result, 300);
 
     return res.json(result);
   } catch (error: any) {
@@ -566,7 +566,7 @@ export async function searchMovies(req: Request, res: Response) {
             },
           };
 
-          setCache(cacheKey, result, 60);
+          setCache(cacheKey, result, 300);
           return res.json(result);
         }
       }
@@ -632,7 +632,7 @@ export async function searchMovies(req: Request, res: Response) {
       },
     };
 
-    setCache(cacheKey, result, 60);
+    setCache(cacheKey, result, 300);
     return res.json(result);
   } catch (error: any) {
     console.error("[API Search] Lỗi:", error.message);
@@ -743,7 +743,7 @@ export async function getHomeBundle(req: Request, res: Response) {
       },
     };
 
-    setCache(cacheKey, result, 60);
+    setCache(cacheKey, result, 300);
 
     return res.json(result);
   } catch (error: any) {

@@ -2,7 +2,7 @@ import { cache } from 'react';
 import Redis from 'ioredis';
 import axios from 'axios';
 
-const DEFAULT_REVALIDATE_SEC = 60;
+const DEFAULT_REVALIDATE_SEC = 300;
 
 // L1 IN-MEMORY RAM CACHE (0.001ms latency - Zero Network Overhead)
 interface MemoryCacheEntry {
@@ -85,7 +85,7 @@ export const fetchWithRedis = cache(async (url: string, options?: RequestInit & 
 
   const _fetchFreshData = async (retryCount = 0): Promise<any> => {
     try {
-      const safeRevalidate = revalidate && revalidate > 0 ? revalidate : 60;
+      const safeRevalidate = revalidate && revalidate > 0 ? revalidate : 300;
       const separator = url.includes('?') ? '&' : '?';
       const cacheBuster = `_t=${Math.floor(Date.now() / 1000 / safeRevalidate)}`;
       const fetchUrl = `${url}${separator}${cacheBuster}`;

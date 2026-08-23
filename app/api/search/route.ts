@@ -55,7 +55,7 @@ export async function GET(request: NextRequest) {
 
         // 3. Tìm trên Backend nội bộ bằng fetchWithRedis siêu tốc
         searchParams.set("keyword", keyword);
-        const internalApiPromise = fetchWithRedis(`${INTERNAL_API_URL}/tim-kiem?${searchParams.toString()}`, { revalidate: 60 })
+        const internalApiPromise = fetchWithRedis(`${INTERNAL_API_URL}/tim-kiem?${searchParams.toString()}`, { revalidate: 300 })
             .catch(() => null);
 
         // Chạy song song cả 2 (Supabase độc quyền + Backend nội bộ 30k phim)

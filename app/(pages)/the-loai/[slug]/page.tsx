@@ -8,7 +8,7 @@ import CatalogSkeleton from "@/app/components/Movies/MovieCatalog/CatalogSkeleto
 import { fetchCatalogData } from "@/app/utils/serverFetch";
 import { INTERNAL_API_URL } from "@/app/utils/apiConfig";
 
-export const revalidate = 60; // Đồng bộ 60 giây toàn hệ thống
+export const revalidate = 300; // Đồng bộ 300 giây (5 phút) toàn hệ thống
 
 type Props = {
     params: Promise<{ slug: string }>;

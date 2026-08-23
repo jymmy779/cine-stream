@@ -5,7 +5,7 @@ import HomeClient from "./HomeClient";
 import Loading from "./loading";
 import { prefetchHomePageData } from "./lib/prefetch-home";
 
-export const revalidate = 60; // ISR: rebuild trang chủ mỗi 60s, Redis giữ data fresh
+export const revalidate = 300; // ISR: rebuild trang chủ mỗi 300s (5 phút)
 
 import { SITE_URL, getAbsoluteUrl } from "@/app/config/site";
 

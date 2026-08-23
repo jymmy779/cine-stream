@@ -57,7 +57,7 @@ export async function fetchCatalogData(
 
         // Fetch movies + filter lists in parallel using unified cache strategy
         const [moviesData, [categoriesData, countriesData]] = await Promise.all([
-            fetchWithRedis(fullUrl, { revalidate: 60 }),
+            fetchWithRedis(fullUrl, { revalidate: 300 }),
             Promise.all([
                 fetchWithRedis(`${INTERNAL_API_URL}/the-loai`, { revalidate: 86400 }), // 24 giờ
                 fetchWithRedis(`${INTERNAL_API_URL}/quoc-gia`, { revalidate: 86400 }), // 24 giờ

@@ -9,7 +9,7 @@ import WatchLoading from "./loading";
 
 import { INTERNAL_API_URL } from "@/app/utils/apiConfig";
 
-export const revalidate = 60; // Cache watch page for 60 seconds (ISR)
+export const revalidate = 300; // Cache watch page for 300 seconds (5 phút ISR)
 
 const API_BASE = INTERNAL_API_URL;
 
@@ -19,7 +19,7 @@ async function getSuggestedMovies(movie: any): Promise<any[]> {
         if (!firstCategory) return [];
 
         const data = await fetchWithRedis(`${API_BASE}/the-loai/${firstCategory}?page=1&limit=10`, {
-            next: { revalidate: 30 },
+            revalidate: 300,
         });
 
         const items = data?.data?.items || data?.items || [];

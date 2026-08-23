@@ -276,46 +276,74 @@ const EpisodeList = ({
       )}
 
       {/* Episode Matrix Grid */}
-      <div
-        key={activeRangeIndex + searchQuery + sortOrder}
-        className="grid grid-cols-4 sm:grid-cols-6 md:grid-cols-8 lg:grid-cols-10 xl:grid-cols-12 gap-2 sm:gap-2.5 animate-fade-in"
-      >
-        {displayedEpisodes.map((ep, i) => {
-          const rawName = ep.name || "";
-          const displayName = rawName.replace(/Tập\s*/i, "").trim();
-          const isTrailerEp = !displayName || /^0+$/.test(displayName) || displayName.toLowerCase() === "trailer";
-          const resolvedSlug = ep.slug ? getFriendlyEpisodeSlug(ep.slug) : (isTrailerEp ? "trailer" : "");
-          const isActive = resolvedSlug === currentEpisode;
+      {(() => {
+        const isMultiAudioSingleMovie = episodeData.length >= 2 && episodeData.length <= 4 && episodeData.some(e => 
+          (e.name || '').toLowerCase().includes('lồng tiếng') || 
+          (e.name || '').toLowerCase().includes('thuyết minh') || 
+          (e.slug || '').includes('long-tieng') || 
+          (e.slug || '').includes('thuyet-minh')
+        );
 
-          return (
-            <TransitionLink
-              key={i}
-              href={`/phim/${slug}/${resolvedSlug}`}
-              transition={!isActive}
-              onClick={() => {
-                if (!isActive) onEpisodeClick?.();
-              }}
-              onMouseDown={(e: React.MouseEvent) => {
-                if (onEpisodeSelect && !isActive) {
-                  e.preventDefault();
-                  e.stopPropagation();
-                  onEpisodeClick?.();
-                  onEpisodeSelect(resolvedSlug);
+        return (
+          <div
+            key={activeRangeIndex + searchQuery + sortOrder}
+            className={isMultiAudioSingleMovie 
+              ? "flex flex-wrap gap-2.5 animate-fade-in" 
+              : "grid grid-cols-4 sm:grid-cols-6 md:grid-cols-8 lg:grid-cols-10 xl:grid-cols-12 gap-2 sm:gap-2.5 animate-fade-in"
+            }
+          >
+            {displayedEpisodes.map((ep, i) => {
+              const rawName = ep.name || "";
+              let displayName = rawName.replace(/Tập\s*/i, "").trim();
+
+              if (isMultiAudioSingleMovie) {
+                const rawLower = rawName.toLowerCase();
+                const slugLower = (ep.slug || "").toLowerCase();
+                if (rawLower.includes("lồng tiếng") || slugLower.includes("long-tieng")) {
+                  displayName = "Bản Lồng Tiếng";
+                } else if (rawLower.includes("thuyết minh") || slugLower.includes("thuyet-minh")) {
+                  displayName = "Bản Thuyết Minh";
+                } else if (rawLower === "full" || slugLower === "full" || slugLower === "tap-full") {
+                  displayName = "Bản Vietsub";
                 }
-              }}
-              className={`
-                h-10 sm:h-11 flex items-center justify-center rounded-xl text-xs sm:text-sm font-bold transition-all cursor-pointer border relative overflow-hidden group
-                ${isActive
-                  ? "bg-[#D497FF] border-[#D497FF] text-black shadow-[0_0_20px_rgba(212,151,255,0.4)] scale-102 z-10"
-                  : "bg-white/5 text-white/70 border-white/10 hover:bg-white/10 hover:text-white hover:border-white/20 active:scale-95"
-                }
-              `}
-            >
-              <span>{isTrailerEp ? "Trailer" : displayName.replace(/^0+(?=\d)/, "")}</span>
-            </TransitionLink>
-          );
-        })}
-      </div>
+              }
+
+              const isTrailerEp = !displayName || /^0+$/.test(displayName) || displayName.toLowerCase() === "trailer";
+              const resolvedSlug = ep.slug ? getFriendlyEpisodeSlug(ep.slug) : (isTrailerEp ? "trailer" : "");
+              const isActive = resolvedSlug === currentEpisode;
+
+              return (
+                <TransitionLink
+                  key={i}
+                  href={`/phim/${slug}/${resolvedSlug}`}
+                  transition={!isActive}
+                  onClick={() => {
+                    if (!isActive) onEpisodeClick?.();
+                  }}
+                  onMouseDown={(e: React.MouseEvent) => {
+                    if (onEpisodeSelect && !isActive) {
+                      e.preventDefault();
+                      e.stopPropagation();
+                      onEpisodeClick?.();
+                      onEpisodeSelect(resolvedSlug);
+                    }
+                  }}
+                  className={`
+                    h-10 sm:h-11 flex items-center justify-center rounded-xl text-xs sm:text-sm font-bold transition-all cursor-pointer border relative overflow-hidden group
+                    ${isMultiAudioSingleMovie ? "px-4 min-w-[130px]" : ""}
+                    ${isActive
+                      ? "bg-[#D497FF] border-[#D497FF] text-black shadow-[0_0_20px_rgba(212,151,255,0.4)] scale-102 z-10"
+                      : "bg-white/5 text-white/70 border-white/10 hover:bg-white/10 hover:text-white hover:border-white/20 active:scale-95"
+                    }
+                  `}
+                >
+                  <span>{isTrailerEp ? "Trailer" : displayName.replace(/^0+(?=\d)/, "")}</span>
+                </TransitionLink>
+              );
+            })}
+          </div>
+        );
+      })()}
     </div>
   );
 };

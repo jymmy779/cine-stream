@@ -290,7 +290,7 @@ export const getMovieDetail = cache(async (slug: string, isPreview: boolean = fa
                         episodes: finalEpisodes
                     };
                     if (!isPreview) {
-                        detailMemoryCache.set(cacheKey, { data: result as any, expires: Date.now() + 60_000 });
+                        detailMemoryCache.set(cacheKey, { data: result as any, expires: Date.now() + 300_000 });
                     }
                     return result;
                 }
@@ -332,7 +332,7 @@ export const getMovieDetail = cache(async (slug: string, isPreview: boolean = fa
                 episodes: finalEpisodes
             };
             if (!isPreview) {
-                detailMemoryCache.set(cacheKey, { data: result as any, expires: Date.now() + 60_000 });
+                detailMemoryCache.set(cacheKey, { data: result as any, expires: Date.now() + 300_000 });
             }
             return result;
         }
@@ -397,7 +397,7 @@ export const getMovieDetail = cache(async (slug: string, isPreview: boolean = fa
                     }
                 }
                 if (!isPreview) {
-                    detailMemoryCache.set(cacheKey, { data: phimApiData, expires: Date.now() + 60_000 });
+                    detailMemoryCache.set(cacheKey, { data: phimApiData, expires: Date.now() + 300_000 });
                 }
                 return phimApiData;
             }

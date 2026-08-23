@@ -23,7 +23,7 @@ const supabase = createClient(
     }
 );
 
-const REVALIDATE_SEC = 60; // Đồng bộ 60 giây toàn hệ thống
+const REVALIDATE_SEC = 300; // Đồng bộ 300 giây (5 phút) toàn hệ thống
 
 async function fetchPhimJson(url: string): Promise<unknown> {
     const data = await fetchWithRedis(url, { revalidate: REVALIDATE_SEC });

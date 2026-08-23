@@ -130,11 +130,24 @@ export default function WatchClient({
             let originalName = server.server_name.toLowerCase();
             let cleanName = "Vietsub";
 
-            if (originalName.includes('thuyết minh') || originalName.includes(' tm') || originalName === 'tm') {
+            const hasVietsub = originalName.includes('vietsub') || originalName.includes(' vs') || originalName.startsWith('vs');
+            const hasThuyetMinh = originalName.includes('thuyết minh') || originalName.includes(' tm') || originalName === 'tm';
+            const hasLongTieng = originalName.includes('lồng tiếng') || originalName.includes(' lt') || originalName === 'lt';
+            const hasRaw = originalName.includes('raw') || originalName.includes('nosub');
+
+            // Nhận diện server đa bản audio (Vietsub + Lồng Tiếng / Thuyết Minh)
+            const hasEpLongTieng = server.server_data?.some((ep: any) => (ep.name || '').toLowerCase().includes('lồng tiếng') || (ep.slug || '').includes('long-tieng'));
+            const hasEpThuyetMinh = server.server_data?.some((ep: any) => (ep.name || '').toLowerCase().includes('thuyết minh') || (ep.slug || '').includes('thuyet-minh'));
+
+            if ((hasVietsub && hasLongTieng) || (hasLongTieng && hasEpLongTieng) || (hasVietsub && hasEpLongTieng)) {
+                cleanName = 'Vietsub + LT';
+            } else if ((hasVietsub && hasThuyetMinh) || (hasThuyetMinh && hasEpThuyetMinh) || (hasVietsub && hasEpThuyetMinh)) {
+                cleanName = 'Vietsub + TM';
+            } else if (hasThuyetMinh) {
                 cleanName = 'Thuyết Minh';
-            } else if (originalName.includes('lồng tiếng') || originalName.includes(' lt') || originalName === 'lt') {
+            } else if (hasLongTieng) {
                 cleanName = 'Lồng Tiếng';
-            } else if (originalName.includes('raw') || originalName.includes('nosub')) {
+            } else if (hasRaw) {
                 cleanName = 'Raw';
             }
 
@@ -1583,6 +1596,14 @@ export default function WatchClient({
                                                                 const displayName = rawName.replace(/Tập\s*/i, "").trim();
                                                                 if (!displayName || /^0+$/.test(displayName) || displayName.toLowerCase() === "trailer") {
                                                                     return "Trailer";
+                                                                }
+                                                                const curSrv = processedEpisodes[activeServerIndex];
+                                                                if (curSrv?.server_data && curSrv.server_data.length >= 2 && curSrv.server_data.length <= 4) {
+                                                                    const rawLower = rawName.toLowerCase();
+                                                                    const slugLower = (ep.slug || "").toLowerCase();
+                                                                    if (rawLower.includes("lồng tiếng") || slugLower.includes("long-tieng")) return "Bản Lồng Tiếng";
+                                                                    if (rawLower.includes("thuyết minh") || slugLower.includes("thuyet-minh")) return "Bản Thuyết Minh";
+                                                                    if (rawLower === "full" || slugLower === "full") return "Bản Vietsub";
                                                                 }
                                                                 return ep.name;
                                                             })()}

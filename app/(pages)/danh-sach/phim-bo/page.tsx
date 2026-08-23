@@ -6,7 +6,7 @@ import { fetchCatalogData } from "@/app/utils/serverFetch";
 import { getAbsoluteUrl } from "@/app/config/site";
 import { INTERNAL_API_URL } from "@/app/utils/apiConfig";
 
-export const revalidate = 60; // Đồng bộ 60 giây toàn hệ thống
+export const revalidate = 300; // Đồng bộ 300 giây (5 phút) toàn hệ thống
 
 export const metadata: Metadata = {
     title: "Phim Bộ Mới Nhất 2026 | LoFilm - Xem Phim Bộ Vietsub Chất Lượng Cao",
