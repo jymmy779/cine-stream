@@ -512,12 +512,15 @@ export default function MovieDetailClient({
 
                                                 <div className="flex items-center justify-between">
                                                     <span className="text-white/50 font-medium">Quốc gia:</span>
-                                                    <div className="flex gap-1.5">
+                                                    <div className="flex gap-1 flex-wrap justify-end">
                                                         {movie.country && movie.country.length > 0 ? (
-                                                            movie.country.map((c) => (
-                                                                <TransitionLink key={c.slug} href={`/quoc-gia/${c.slug}`} className="text-[#D497FF] font-semibold hover:underline">
-                                                                    {c.name}
-                                                                </TransitionLink>
+                                                            movie.country.map((c, idx) => (
+                                                                <span key={c.slug} className="inline-flex items-center">
+                                                                    <TransitionLink href={`/quoc-gia/${c.slug}`} className="text-[#D497FF] font-semibold hover:underline">
+                                                                        {c.name}
+                                                                    </TransitionLink>
+                                                                    {idx < (movie.country?.length ?? 0) - 1 && <span className="text-white/40 mr-1">,</span>}
+                                                                </span>
                                                             ))
                                                         ) : (
                                                             <span className="text-white font-semibold">Đang cập nhật</span>

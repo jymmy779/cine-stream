@@ -92,15 +92,15 @@ const MovieInfo = ({ slug, movie, episode }: MovieInfoProps) => {
       </div>
 
       {/* Nội Dung Phim - Full Width & Luôn hiển thị */}
-      <div className="border-t border-white/5 pt-4">
-        <div className="flex items-center gap-2 mb-2 sm:mb-2.5">
-          <div className="w-1.5 h-3.5 bg-[#D497FF] rounded-full shrink-0" />
-          <h3 className="text-xs sm:text-sm font-bold text-white uppercase tracking-wider">
+      <div className="border-t border-white/5 pt-4 sm:pt-5">
+        <div className="flex items-center gap-2 mb-2 sm:mb-3">
+          <div className="w-1.5 h-4 bg-[#D497FF] rounded-full shrink-0" />
+          <h3 className="text-sm sm:text-base font-bold text-white uppercase tracking-wider">
             Nội Dung Phim
           </h3>
         </div>
 
-        <p className="text-xs sm:text-sm text-white/70 leading-relaxed font-light">
+        <p className="text-sm sm:text-base text-white/75 leading-relaxed">
           {cleanedContent || "Bộ phim hấp dẫn đang được phát sóng với chất lượng cao trên LoFilm..."}
         </p>
       </div>
