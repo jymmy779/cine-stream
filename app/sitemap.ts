@@ -14,7 +14,7 @@ export default async function sitemap(): Promise<MetadataRoute.Sitemap> {
         '/danh-sach/hoat-hinh',
         '/danh-sach/tv-shows',
         '/danh-sach/phim-chieu-rap',
-        '/danh-sach/phim-moi',
+        '/danh-sach/phim-moi-cap-nhat',
         '/gioi-thieu',
         '/lien-he',
         '/faq',

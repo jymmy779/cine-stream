@@ -275,7 +275,7 @@ export function useMovieCatalog({ baseApiUrl, itemsPerPage = 32, slug, initialDa
                             return;
                         }
                         if (activeFilters.category === "") {
-                            const target = activeFilters.type === "single" ? "/danh-sach/phim-le" : (activeFilters.type === "series" ? "/danh-sach/phim-bo" : "/danh-sach/phim-moi");
+                            const target = activeFilters.type === "single" ? "/danh-sach/phim-le" : (activeFilters.type === "series" ? "/danh-sach/phim-bo" : "/danh-sach/phim-moi-cap-nhat");
                             router.push(target);
                             if (isMounted) { setIsLoading(false); setIsPageLoading(false); }
                             return;
@@ -289,7 +289,7 @@ export function useMovieCatalog({ baseApiUrl, itemsPerPage = 32, slug, initialDa
                             return;
                         }
                         if (activeFilters.country === "") {
-                            const target = activeFilters.type === "single" ? "/danh-sach/phim-le" : (activeFilters.type === "series" ? "/danh-sach/phim-bo" : "/danh-sach/phim-moi");
+                            const target = activeFilters.type === "single" ? "/danh-sach/phim-le" : (activeFilters.type === "series" ? "/danh-sach/phim-bo" : "/danh-sach/phim-moi-cap-nhat");
                             router.push(target);
                             if (isMounted) { setIsLoading(false); setIsPageLoading(false); }
                             return;

@@ -28,7 +28,7 @@ export const mockTopics: TopicItem[] = [
     {
         id: "phim-4k",
         title: "Phim 4K",
-        href: "/danh-sach/phim-moi",
+        href: "/danh-sach/phim-moi-cap-nhat",
         bgColor: "from-[#d94a38] to-[#ab3024]",
         icon: Flame,
         imageUrl: "https://image.tmdb.org/t/p/w500/bRBeSHfGHwkEpImlhxPmOcUsaeg.jpg",

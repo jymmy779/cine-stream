@@ -33,7 +33,7 @@ export default function DesktopSidebar() {
         { icon: Home, label: "Trang chủ", href: "/" },
         { icon: Tv, label: "Phim Hàn", href: "/quoc-gia/han-quoc" },
         { icon: MonitorPlay, label: "Phim Trung", href: "/quoc-gia/trung-quoc" },
-        { icon: Search, label: "Duyệt Tìm", href: "/danh-sach/phim-moi" },
+        { icon: Search, label: "Duyệt Tìm", href: "/danh-sach/phim-moi-cap-nhat" },
         { icon: Hash, label: "Chủ đề", href: "/chu-de" },
         { icon: Library, label: "Playlist", href: "/thu-vien", protected: true },
         { icon: History, label: "Lịch sử", href: "/lich-su", protected: true },

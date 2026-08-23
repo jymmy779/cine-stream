@@ -7,11 +7,12 @@ import toast from "react-hot-toast";
 import HeroSliderTab from "./HeroSliderTab";
 import EditorChoicesTab from "./EditorChoicesTab";
 import TopicsTab from "./TopicsTab";
+import SyncManagerTab from "./SyncManagerTab";
 
 export default function AdminDashboard({ initialStats, initialSettings, initialStarredMovies }: { initialStats: { moviesCount: number, episodesCount: number, sourcesCount: number }, initialSettings: any, initialStarredMovies?: any[] }) {
     const [stats, setStats] = useState(initialStats);
     const [settings, setSettings] = useState(initialSettings);
-    const [activeTab, setActiveTab] = useState<"stats" | "settings" | "hero" | "editor" | "topics">("stats");
+    const [activeTab, setActiveTab] = useState<"stats" | "sync" | "settings" | "hero" | "editor" | "topics">("stats");
     const [isPending, startTransition] = useTransition();
     const [hasChanges, setHasChanges] = useState(false);
 
@@ -61,6 +62,12 @@ export default function AdminDashboard({ initialStats, initialSettings, initialS
                     <i className="fa-solid fa-chart-pie mr-2"></i> Tổng quan
                 </button>
                 <button 
+                    onClick={() => setActiveTab("sync")}
+                    className={`pb-2 px-2 font-medium transition ${activeTab === 'sync' ? 'text-[#D497FF] border-b-2 border-[#D497FF]' : 'text-gray-400 hover:text-white'}`}
+                >
+                    <i className="fa-solid fa-rotate mr-2"></i> Cào Phim & Đồng Bộ
+                </button>
+                <button 
                     onClick={() => setActiveTab("settings")}
                     className={`pb-2 px-2 font-medium transition ${activeTab === 'settings' ? 'text-[#D497FF] border-b-2 border-[#D497FF]' : 'text-gray-400 hover:text-white'}`}
                 >
@@ -85,6 +92,11 @@ export default function AdminDashboard({ initialStats, initialSettings, initialS
                     <i className="fa-solid fa-list mr-2"></i> Quản lý Chủ đề
                 </button>
             </div>
+
+            {/* Sync Manager Tab */}
+            {activeTab === "sync" && (
+                <SyncManagerTab />
+            )}
 
             {/* Stats Tab */}
             {activeTab === "stats" && (

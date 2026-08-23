@@ -36,7 +36,7 @@ const CURATOR_TAGS = [
 
 function EditorChoiceRow({
     title = "Editor's Choice",
-    viewAllLink = "/danh-sach/phim-moi",
+    viewAllLink = "/danh-sach/phim-moi-cap-nhat",
     initialMovies,
     titleGradient = "from-amber-200 via-yellow-100 to-white"
 }: EditorChoiceRowProps) {

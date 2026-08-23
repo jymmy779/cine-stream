@@ -224,10 +224,26 @@ export default function MovieDetailClient({
     const isCompleted = isMovieCompleted(movie);
     const statusText = isCompleted ? 'Đã hoàn thành' : 'Đang cập nhật';
     const rating = movie.tmdb?.vote_average ? movie.tmdb.vote_average.toFixed(1) : null;
-    const categoryStyles = useMemo(() => {
-        if (!movie.category || movie.category.length === 0) return [];
-        return getCategoryStyles(movie.category.map(c => c.slug));
+
+    const displayCategories = useMemo(() => {
+        if (!movie.category || !Array.isArray(movie.category)) return [];
+        const seen = new Set<string>();
+        const res: typeof movie.category = [];
+        for (const cat of movie.category) {
+            const finalSlug = generateCategorySlug(cat.slug, cat.name);
+            if (!finalSlug || seen.has(finalSlug)) continue;
+            if (/^\d{2,4}$/.test(finalSlug)) continue;
+            seen.add(finalSlug);
+            res.push(cat);
+            if (res.length >= 6) break;
+        }
+        return res;
     }, [movie.category]);
+
+    const categoryStyles = useMemo(() => {
+        if (displayCategories.length === 0) return [];
+        return getCategoryStyles(displayCategories.map(c => generateCategorySlug(c.slug, c.name)));
+    }, [displayCategories]);
 
     return (
         <div className="min-h-screen pb-24 bg-[#0F1115] text-white">
@@ -308,9 +324,9 @@ export default function MovieDetailClient({
                             </div>
 
                             {/* Genres */}
-                            {movie.category && movie.category.length > 0 && (
+                            {displayCategories.length > 0 && (
                                 <div className="flex flex-wrap items-center justify-center md:justify-start gap-1.5 sm:gap-2 pt-0.5">
-                                    {movie.category.map((cat, idx) => {
+                                    {displayCategories.map((cat, idx) => {
                                         const finalSlug = generateCategorySlug(cat.slug, cat.name);
                                         return (
                                             <TransitionLink

@@ -1887,15 +1887,27 @@ export default function WatchClient({
                                             </h3>
                                         </div>
                                         <div className="flex flex-wrap gap-1.5">
-                                            {movie.category.map((cat: { id?: string; name: string; slug: string }) => (
-                                                <TransitionLink
-                                                    key={cat.id || cat.slug}
-                                                    href={`/the-loai/${cat.slug}`}
-                                                    className="px-2.5 py-1 rounded-lg bg-white/5 border border-white/10 hover:bg-[#D497FF]/15 hover:border-[#D497FF]/30 hover:text-[#D497FF] text-[11px] font-medium text-white/80 transition-all duration-200"
-                                                >
-                                                    #{cat.name}
-                                                </TransitionLink>
-                                            ))}
+                                            {(() => {
+                                                const seen = new Set<string>();
+                                                return movie.category
+                                                    .filter((cat: any) => {
+                                                        if (!cat || !cat.slug) return false;
+                                                        if (/^\d{2,4}$/.test(cat.slug)) return false;
+                                                        if (seen.has(cat.slug)) return false;
+                                                        seen.add(cat.slug);
+                                                        return true;
+                                                    })
+                                                    .slice(0, 8)
+                                                    .map((cat: { id?: string; name: string; slug: string }) => (
+                                                        <TransitionLink
+                                                            key={cat.id || cat.slug}
+                                                            href={`/the-loai/${cat.slug}`}
+                                                            className="px-2.5 py-1 rounded-lg bg-white/5 border border-white/10 hover:bg-[#D497FF]/15 hover:border-[#D497FF]/30 hover:text-[#D497FF] text-[11px] font-medium text-white/80 transition-all duration-200"
+                                                        >
+                                                            #{cat.name}
+                                                        </TransitionLink>
+                                                    ));
+                                            })()}
                                         </div>
                                     </div>
                                 )}

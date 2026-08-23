@@ -51,9 +51,13 @@ const CATEGORY_MAPPING: Record<string, string> = {
     "sci-fi-fantasy": "khoa-hoc-vien-tuong",
     "thriller": "tam-ly",
     "war": "chien-tranh",
-    "western": "vien-tay",
-    "reality": "tv-shows", // TV Shows / Truyền hình thực tế
-    "kids": "gia-dinh",
+    "thieu-nhi": "thieu-nhi",
+    "phim-thieu-nhi": "thieu-nhi",
+    "tre-em": "thieu-nhi",
+    "phim-tre-em": "thieu-nhi",
+    "kids": "thieu-nhi",
+    "children": "thieu-nhi",
+    "kid": "thieu-nhi",
     "soap": "tam-ly",
     "talk": "tv-shows",
     "politics": "chinh-kich",
@@ -78,21 +82,66 @@ export function generateCategorySlug(slug: string | undefined | null, name: stri
 }
 
 /**
- * Filter duplicate movies by root name (removes sequels like SS1, SS2, Phần 1, Phần 2...)
+ * Trích xuất Root Name chuẩn hóa của phim để nhận diện các phần/mùa/sequels
+ */
+export function extractMovieRootKey(movie: Movie): { nameRoot: string; slugRoot: string; originRoot: string } {
+    const rawName = (movie.name || "").trim();
+    const rawOrigin = (movie.origin_name || "").trim();
+    const rawSlug = (movie.slug || "").trim();
+
+    // 1. Chuẩn hóa Name (Bỏ Phần, Phan, Mùa, Mua, Season, SS, Part, Vol, Movie, Act, số La Mã, số ở cuối...)
+    const cleanName = rawName
+        .replace(/\s*[:\-–—]\s*/g, " ")
+        .replace(/\s*\(?(Phần|Phan|Mùa|Mua|Season|SS|Part|Section|Vol|Volume|Movie|Film|Hồi|Cour|Arc|Act|Book|Chapter|Ch|Tập|ss|s|ep|episode)\s*[:\-#]?\s*(\d+|Cuối|Đặc Biệt|I+|IV|V|VI|VII|VIII|IX|X|\b[a-z]\b)\)?.*$/i, "")
+        .replace(/\s*\((19\d{2}|20\d{2})\)\s*$/i, "") // Bỏ (2024), (2025)...
+        .replace(/(?<!Số\s*)\s+([2-9]|\d{2})\s*$/i, "") // Bỏ số ở cuối (VD: Avatar 2, Dune 2), không bỏ "Đồn 99"
+        .trim()
+        .toLowerCase()
+        .normalize("NFD")
+        .replace(/[\u0300-\u036f]/g, "")
+        .replace(/đ/g, "d");
+
+    // 2. Chuẩn hóa Slug
+    const cleanSlug = rawSlug
+        .replace(/-(?:phan|mua|season|ss|part|vol|volume|movie|film|tap|hoi|cour|arc|act|chapter)-[a-z0-9]+.*$/i, "")
+        .replace(/-(?:20\d{2}|19\d{2})$/i, "") // Bỏ năm ở cuối slug
+        .replace(/-(?:[2-9]|\d{2})$/i, "") // Bỏ số lẻ ở cuối slug (VD: -2, -3)
+        .replace(/-+/g, "-")
+        .replace(/^-|-$/g, "");
+
+    // 3. Chuẩn hóa Origin Name
+    const cleanOrigin = rawOrigin
+        .replace(/\s*[:\-–—]\s*/g, " ")
+        .replace(/\s*\(?(Season|SS|Part|Vol|Volume|Movie|Film|Act|Chapter|Book)\s*[:\-#]?\s*(\d+|Final|Special|I+|IV|V|VI|VII|VIII|IX|X)\)?.*$/i, "")
+        .replace(/(?<!No\.\s*|Number\s*)\s+([2-9]|\d{2})\s*$/i, "")
+        .trim()
+        .toLowerCase();
+
+    return { nameRoot: cleanName, slugRoot: cleanSlug, originRoot: cleanOrigin };
+}
+
+/**
+ * Filter duplicate movies by root name (removes sequels like SS1, SS2, Phần 1, Phần 2, Mùa 1, Mùa 2, Movie 2...)
  */
 export function filterDuplicateMovies(movies: Movie[]): Movie[] {
-    const seen = new Set<string>();
-    return movies.filter((movie) => {
-        // Normalize name: remove all common sequel/part/season indicators
-        const rootName = movie.name
-            .replace(/\s*[:\-–—]\s*/g, " ") // Replace separators with space
-            .replace(/\s*\(?(Phần|P\.|Part|Section|Vol|Volume|Season|SS|Tập|ss|S|Ep|Episode|Chapter|Ch|Book)\s*(\d+|Cuối|Đặc Biệt|I+|IV|V|VI|VII|VIII|IX|X)\)?.*$/i, "")
-            .replace(/\s+\d+\s*$/i, "") // Remove trailing numbers (e.g., Movie Name 2)
-            .trim()
-            .toLowerCase();
+    const seenNames = new Set<string>();
+    const seenSlugs = new Set<string>();
+    const seenOrigins = new Set<string>();
 
-        if (seen.has(rootName)) return false;
-        seen.add(rootName);
+    return movies.filter((movie) => {
+        if (!movie || !movie.name) return false;
+        
+        const { nameRoot, slugRoot, originRoot } = extractMovieRootKey(movie);
+
+        // Kiểm tra xem đã xuất hiện root name, root slug hoặc root origin name chưa
+        if (nameRoot && seenNames.has(nameRoot)) return false;
+        if (slugRoot && seenSlugs.has(slugRoot)) return false;
+        if (originRoot && originRoot.length > 3 && seenOrigins.has(originRoot)) return false;
+
+        if (nameRoot) seenNames.add(nameRoot);
+        if (slugRoot) seenSlugs.add(slugRoot);
+        if (originRoot && originRoot.length > 3) seenOrigins.add(originRoot);
+
         return true;
     });
 }
@@ -116,13 +165,12 @@ export function sortAndSlicePosterRowMovies(items: Movie[]): Movie[] {
  * Parse episode_current into display-friendly status text
  */
 export function getEpisodeStatus(movie: Movie): string {
-    const cur = (movie.episode_current || "").toLowerCase();
+    const cur = (movie.episode_current || "").toLowerCase().trim();
     if (cur.includes("trailer")) return "Trailer";
 
-    // Phim lẻ thực sự: episode_total = 1 HOẶC (episode_total không xác định VÀ current là "Full" chính xác - dành cho Anime Movie trong catalog)
-    const isSingleMovie = (movie.episode_total === 1 || String(movie.episode_total) === "1" || (!movie.episode_total && cur === "full")) && cur.includes("full");
+    // Phim lẻ thực sự: episode_total = 1 HOẶC (episode_total không xác định VÀ current là "Full" chính xác)
+    const isSingleMovie = (movie.type === "single" || movie.episode_total === 1 || String(movie.episode_total) === "1" || (!movie.episode_total && cur === "full")) && (cur.includes("full") || movie.type === "single");
     if (isSingleMovie) return "Full";
-
 
     const isSeries = movie.type === "series" || movie.type === "hoathinh" || movie.type === "tvshows" || (movie.episode_total && String(movie.episode_total) !== "1");
 
@@ -146,12 +194,13 @@ export function getEpisodeStatus(movie: Movie): string {
 
         const matchNum = movie.episode_current?.match(/\d+/);
         if (matchNum) {
-            if (totalNum && matchNum[0] === totalNum) {
+            const currentNum = parseInt(matchNum[0], 10);
+            if (totalNum && String(currentNum) === totalNum) {
                 return `HT (${totalNum}/${totalNum})`;
             }
-            return `Tập ${matchNum[0]}`;
+            return `Tập ${currentNum}`;
         }
-        return "HT";
+        return "Tập mới";
     }
 
     return "Full";
@@ -284,18 +333,12 @@ export function getRawImageUrl(url: string | undefined): string {
 }
 
 /**
- * Smart helper to select the best vertical poster URL for a movie object.
- * Handles OPhim/PhimAPI inverted poster/thumb naming conventions.
+ * Helper lấy URL ảnh Poster đứng (2:3) chuẩn cho phim
  */
 export function getMoviePosterUrl(movie: Partial<Movie> | undefined): string {
     if (!movie) return TRANSPARENT_GIF;
     const poster = movie.poster_url || "";
     const thumb = movie.thumb_url || "";
-
-    if (poster.includes("poster") && thumb.includes("thumb")) {
-        return getImageUrl(thumb || poster);
-    }
-
     return getImageUrl(poster || thumb);
 }
 
@@ -303,11 +346,6 @@ export function getMovieRawPosterUrl(movie: Partial<Movie> | undefined): string 
     if (!movie) return TRANSPARENT_GIF;
     const poster = movie.poster_url || "";
     const thumb = movie.thumb_url || "";
-
-    if (poster.includes("poster") && thumb.includes("thumb")) {
-        return getRawImageUrl(thumb || poster);
-    }
-
     return getRawImageUrl(poster || thumb);
 }
 

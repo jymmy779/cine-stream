@@ -22,8 +22,8 @@ export async function enrichApiDataWithDatabase(data: any): Promise<any> {
             if (!dbEp) return apiEp;
             if (!apiEp) return dbEp;
             
-            const dbLower = dbEp.toLowerCase();
-            const apiLower = apiEp.toLowerCase();
+            const dbLower = dbEp.toLowerCase().trim();
+            const apiLower = apiEp.toLowerCase().trim();
             
             if (dbLower.includes("hoàn tất") || dbLower.includes("full")) return dbEp;
             if (apiLower.includes("hoàn tất") || apiLower.includes("full")) return apiEp;
@@ -37,7 +37,7 @@ export async function enrichApiDataWithDatabase(data: any): Promise<any> {
                 const apiNum = parseInt(apiMatch[0], 10);
                 return apiNum > dbNum ? apiEp : dbEp;
             }
-            return dbEp;
+            return dbMatch ? dbEp : apiEp;
         };
 
         // Identify data structure

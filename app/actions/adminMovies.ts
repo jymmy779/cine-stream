@@ -602,14 +602,25 @@ export async function importMovieFromApi(apiUrl: string, data: Record<string, an
 
         if (existingMovie) {
             // Cập nhật movie hiện tại:
-            // Chỉ ghi đè metadata nếu nguồn hiện tại là KKPhim (ưu tiên metadata KKPhim).
-            // Nếu không phải KKPhim, ta KHÔNG ghi đè metadata cũ (để bảo toàn data của KKPhim hoặc data đã lưu).
             let updatePayload: any = {};
+
+            const newEpCur = movieData.episode_current || movieData.current_episode || "";
+            const oldEpCur = existingMovie.episode_current || "";
+            
+            // So sánh số tập để cập nhật episode_current nếu nguồn mới có tập cao hơn
+            const newMatch = newEpCur.match(/\d+/);
+            const oldMatch = oldEpCur.match(/\d+/);
+            const newNum = newMatch ? parseInt(newMatch[0], 10) : 0;
+            const oldNum = oldMatch ? parseInt(oldMatch[0], 10) : 0;
+
+            if (newNum > oldNum || (!oldEpCur && newEpCur) || newEpCur.toLowerCase().includes("hoàn tất") || newEpCur.toLowerCase().includes("full")) {
+                updatePayload.episode_current = newEpCur;
+            }
 
             if (isKkPhim) {
                 updatePayload = {
-                    episode_current: movieData.episode_current || movieData.current_episode || "",
-                    episode_total: String(movieData.episode_total || movieData.total_episodes || ""),
+                    ...updatePayload,
+                    episode_total: String(movieData.episode_total || movieData.total_episodes || existingMovie.episode_total || ""),
                     name: movieData.name,
                     origin_name: movieData.origin_name || movieData.original_name || movieData.name,
                     content: movieData.content || movieData.description || "",
@@ -641,7 +652,7 @@ export async function importMovieFromApi(apiUrl: string, data: Record<string, an
 
             if (Object.keys(updatePayload).length > 0) {
                 const { data, error } = await supabase.from('exclusive_movies').update(updatePayload).eq('slug', movieData.slug).select().single();
-                movie = data;
+                movie = data || existingMovie;
                 insertError = error;
             } else {
                 movie = existingMovie;
@@ -719,16 +730,28 @@ export async function importMovieFromApi(apiUrl: string, data: Record<string, an
                 return { error: "Lỗi lưu danh sách tập: " + bulkError.message };
             }
 
-            // Sync lại lang_tag từ TẤT CẢ các tập hiện có của phim này (để Admin UI và List UI hiển thị đúng)
-            const { data: allEpisodes } = await supabase.from('exclusive_episodes').select('server_name').eq('movie_id', movie.id);
+            // Đồng bộ lại episode_current và lang_tag từ TẤT CẢ các tập hiện có của phim này
+            const { data: allEpisodes } = await supabase.from('exclusive_episodes').select('server_name, name').eq('movie_id', movie.id);
             const detectedLangs = new Set<string>();
+            const serverCounts = new Map<string, number>();
+
             allEpisodes?.forEach(ep => {
-                const sNameLower = (ep.server_name || "").toLowerCase();
+                const sName = ep.server_name || "";
+                serverCounts.set(sName, (serverCounts.get(sName) || 0) + 1);
+
+                const sNameLower = sName.toLowerCase();
                 if (sNameLower.includes("vietsub")) detectedLangs.add("Vietsub");
                 if (sNameLower.includes("thuyết minh")) detectedLangs.add("Thuyết Minh");
                 if (sNameLower.includes("lồng tiếng")) detectedLangs.add("Lồng Tiếng");
                 if (sNameLower.includes("song ngữ")) detectedLangs.add("Song Ngữ");
             });
+
+            let maxEps = 0;
+            serverCounts.forEach((count) => {
+                if (count > maxEps) maxEps = count;
+            });
+
+            const finalUpdate: any = {};
 
             if (detectedLangs.size > 0) {
                 const order = ["Vietsub", "Thuyết Minh", "Lồng Tiếng", "Song Ngữ"];
@@ -737,8 +760,20 @@ export async function importMovieFromApi(apiUrl: string, data: Record<string, an
                 if (movie.sub_docquyen) {
                     calculatedLang += " Độc Quyền";
                 }
-                await supabase.from('exclusive_movies').update({ lang_tag: calculatedLang }).eq('id', movie.id);
+                finalUpdate.lang_tag = calculatedLang;
                 movie.lang_tag = calculatedLang;
+            }
+
+            if (movie.type !== "single" && maxEps > 0) {
+                const cur = (movie.episode_current || "").toLowerCase();
+                if (!cur.includes("hoàn tất") && !cur.includes("full") && movie.status !== "completed") {
+                    finalUpdate.episode_current = `Tập ${maxEps}`;
+                    movie.episode_current = `Tập ${maxEps}`;
+                }
+            }
+
+            if (Object.keys(finalUpdate).length > 0) {
+                await supabase.from('exclusive_movies').update(finalUpdate).eq('id', movie.id);
             }
         }
 

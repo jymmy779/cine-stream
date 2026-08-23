@@ -9,7 +9,7 @@ import { INTERNAL_API_URL } from "@/app/utils/apiConfig";
 export default function NewMoviesClient({ initialData }: { initialData?: CatalogInitialData }) {
     return (
         <MovieCatalogClient
-            title="Danh sách Phim mới"
+            title="Danh sách Phim mới cập nhật"
             baseApiUrl={`${INTERNAL_API_URL}/danh-sach/phim-moi-cap-nhat`}
             itemsPerPage={32}
             hideSidebar={true}

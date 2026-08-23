@@ -9,7 +9,7 @@ import { INTERNAL_API_URL } from "@/app/utils/apiConfig";
 export default function TVShowsClient({ initialData }: { initialData?: CatalogInitialData }) {
     return (
         <MovieCatalogClient
-            title="TV Shows Truyền Hình"
+            title="TV Shows"
             baseApiUrl={`${INTERNAL_API_URL}/danh-sach/tv-shows`}
             defaultType="tvshows"
             initialData={initialData}

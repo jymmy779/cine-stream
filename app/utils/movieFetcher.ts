@@ -106,50 +106,55 @@ export const getMovieDetail = cache(async (slug: string, isPreview: boolean = fa
                 });
             }
 
-            // Phân loại server độc quyền:
-            // - Nếu là bản sub_docquyen tự tải lên (không phải nguồn crawler OP, NC, VS) thì có thể ưu tiên trên cùng
-            // - Mặc định: KKPhim (apiEpisodes) luôn đứng đầu, sau đó đến các server import khác (OP, NC, VS...)
-            const customDocQuyenServers: any[] = [];
-            const otherExclusiveServers: any[] = [];
-
-            exclusiveServers.forEach(srv => {
-                const sName = srv.server_name;
-                const isImportedSource = sName.includes(' OP') || sName.includes(' NC') || sName.includes(' VS') || sName.includes(' KK');
-                if (exclusiveMovie.sub_docquyen && !isImportedSource) {
-                    customDocQuyenServers.push(srv);
-                } else {
-                    otherExclusiveServers.push(srv);
-                }
-            });
-
-            let finalEpisodes = [
-                ...customDocQuyenServers,
-                ...apiEpisodes,
-                ...otherExclusiveServers
+            // Phân loại và gộp tất cả các server
+            const combinedRawServers = [
+                ...exclusiveServers,
+                ...apiEpisodes
             ];
 
-            if (finalEpisodes.length === 0) {
-                finalEpisodes = [...exclusiveServers];
-            }
-
-            // Tính số tập lớn nhất giữa tất cả các Server (nội bộ và API ngoài)
-            let maxExclusiveCount = 0;
-            exclusiveServers.forEach(srv => {
-                if (srv.server_data && srv.server_data.length > maxExclusiveCount) {
-                    maxExclusiveCount = srv.server_data.length;
+            // Loại bỏ server bị trùng tên nếu có
+            const uniqueServersMap = new Map<string, any>();
+            combinedRawServers.forEach(srv => {
+                if (srv && srv.server_name) {
+                    if (!uniqueServersMap.has(srv.server_name) || (srv.server_data?.length > (uniqueServersMap.get(srv.server_name)?.server_data?.length || 0))) {
+                        uniqueServersMap.set(srv.server_name, srv);
+                    }
                 }
             });
 
-            let maxApiCount = 0;
-            if (phimApiData && phimApiData.episodes) {
-                phimApiData.episodes.forEach((srv: any) => {
-                    if (srv.server_data && srv.server_data.length > maxApiCount) {
-                        maxApiCount = srv.server_data.length;
-                    }
-                });
-            }
+            const uniqueServersList = Array.from(uniqueServersMap.values());
 
-            const maxEpisodesCount = Math.max(maxExclusiveCount, maxApiCount);
+            // Tính số tập lớn nhất giữa tất cả các Server
+            let maxEpisodesCount = 0;
+            uniqueServersList.forEach(srv => {
+                if (srv.server_data && srv.server_data.length > maxEpisodesCount) {
+                    maxEpisodesCount = srv.server_data.length;
+                }
+            });
+
+            const isSeriesOngoing = (exclusiveMovie.type === "series" || exclusiveMovie.type === "hoathinh" || exclusiveMovie.type === "tvshows") && 
+                !((exclusiveMovie.episode_current || "").toLowerCase().includes("hoàn tất") || (exclusiveMovie.episode_current || "").toLowerCase().includes("full") || exclusiveMovie.status === "completed");
+
+            // Sắp xếp Server:
+            // - Nếu là phim bộ Ongoing: Server có số tập nhiều nhất đứng đầu!
+            // - Nếu số tập bằng nhau: Ưu tiên Server M3U8 trực tiếp
+            const finalEpisodes = uniqueServersList.sort((a, b) => {
+                const countA = a.server_data?.length || 0;
+                const countB = b.server_data?.length || 0;
+
+                if (isSeriesOngoing && countB !== countA) {
+                    return countB - countA;
+                }
+
+                // Ưu tiên Server có link M3U8 trực tiếp
+                const hasM3u8A = a.server_data?.some((ep: any) => ep.link_m3u8 && ep.link_m3u8.trim().length > 0) ? 1 : 0;
+                const hasM3u8B = b.server_data?.some((ep: any) => ep.link_m3u8 && ep.link_m3u8.trim().length > 0) ? 1 : 0;
+                if (hasM3u8B !== hasM3u8A) {
+                    return hasM3u8B - hasM3u8A;
+                }
+
+                return 0;
+            });
             
             let calculatedEpisodeCurrent = exclusiveMovie.type === "single" ? "Full" : "";
             if (exclusiveMovie.type !== "single") {
@@ -301,7 +306,7 @@ export const getMovieDetail = cache(async (slug: string, isPreview: boolean = fa
                     phimApiData.movie.view = localViewCount;
                 }
                 if (phimApiData.episodes) {
-                    phimApiData.episodes = phimApiData.episodes.map((epServer: any) => {
+                    const mappedEpisodes = phimApiData.episodes.map((epServer: any) => {
                         let sName = epServer.server_name;
                         if (!sName.includes(' OP') && !sName.includes(' KK') && !sName.includes(' NC') && !sName.includes(' VS')) {
                             const sampleUrl = (epServer.server_data?.[0]?.link_m3u8 || epServer.server_data?.[0]?.link_embed || '').toLowerCase();
@@ -316,6 +321,20 @@ export const getMovieDetail = cache(async (slug: string, isPreview: boolean = fa
                             }
                         }
                         return { ...epServer, server_name: sName };
+                    });
+
+                    const isSeriesOngoing = (phimApiData.movie?.type === "series" || phimApiData.movie?.type === "hoathinh" || phimApiData.movie?.type === "tvshows") && 
+                        !((phimApiData.movie?.episode_current || "").toLowerCase().includes("hoàn tất") || (phimApiData.movie?.episode_current || "").toLowerCase().includes("full") || phimApiData.movie?.status === "completed");
+
+                    phimApiData.episodes = mappedEpisodes.sort((a: any, b: any) => {
+                        const countA = a.server_data?.length || 0;
+                        const countB = b.server_data?.length || 0;
+                        if (isSeriesOngoing && countB !== countA) {
+                            return countB - countA;
+                        }
+                        const hasM3u8A = a.server_data?.some((ep: any) => ep.link_m3u8 && ep.link_m3u8.trim().length > 0) ? 1 : 0;
+                        const hasM3u8B = b.server_data?.some((ep: any) => ep.link_m3u8 && ep.link_m3u8.trim().length > 0) ? 1 : 0;
+                        return hasM3u8B - hasM3u8A;
                     });
                 }
                 if (!isPreview) {

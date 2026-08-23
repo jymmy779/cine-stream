@@ -108,7 +108,20 @@ async function fetchTop(url: string, limit: number = 30): Promise<Movie[]> {
 
 async function mapHero(payload: unknown): Promise<Movie[]> {
     const raw = parseHeroItems(payload);
-    return filterDuplicateMovies(raw).slice(0, 8);
+    const currentYear = new Date().getFullYear();
+
+    // 1. Lọc bỏ Trailer và phim có năm ảo trong tương lai xa (ví dụ: 2030, 2035)
+    const validMovies = raw.filter((m) => {
+        const cur = (m.episode_current || "").toLowerCase().trim();
+        const qual = (m.quality || "").toLowerCase().trim();
+        const stat = (m.status || "").toLowerCase().trim();
+        const isTrailer = cur.includes("trailer") || qual.includes("trailer") || stat.includes("trailer");
+        const isFutureGhostYear = typeof m.year === "number" && m.year > currentYear + 1;
+        return !isTrailer && !isFutureGhostYear;
+    });
+
+    // 2. Lọc trùng lặp thương hiệu/nhiều phần (Phần 1, Phần 2, SS1, SS2...) và lấy 8 phim đầu
+    return filterDuplicateMovies(validMovies).slice(0, 8);
 }
 
 /**
@@ -279,8 +292,14 @@ async function getExclusiveMoviesForHero(): Promise<Movie[]> {
 }
 
 
+function getHeroUrl() {
+    const currentYear = new Date().getFullYear();
+    const heroMinYear = currentYear - 1; // Tự động lấy phim từ năm hiện tại và năm liền trước (VD: 2025 - 2026, sang 2027 tự động thành 2026 - 2027)
+    const heroMaxYear = currentYear + 1; // Chặn các năm tương lai ảo như 2030, 2035
+    return `${INTERNAL_API_URL}/danh-sach/phim-moi-cap-nhat?min_year=${heroMinYear}&max_year=${heroMaxYear}&limit=60`;
+}
+
 const URLS = {
-    hero: `${INTERNAL_API_URL}/danh-sach/phim-moi-cap-nhat?limit=60`,
     categories: `${INTERNAL_API_URL}/the-loai`,
     movieRowHan: `${INTERNAL_API_URL}/quoc-gia/han-quoc?limit=60`,
     movieRowTrung: `${INTERNAL_API_URL}/quoc-gia/trung-quoc?limit=60`,
@@ -499,7 +518,7 @@ async function fetchAndCacheBundle(
         topLeMovies,
         topBoMovies,
     ] = await Promise.all([
-        fetchPhimJson(URLS.hero),
+        fetchPhimJson(getHeroUrl()),
         fetchPhimJson(URLS.categories),
         fetchPhimJson(URLS.movieRowHan),
         fetchPhimJson(URLS.movieRowTrung),

@@ -64,7 +64,7 @@ export default function MobileBottomSheet({ isOpen, onClose, categories, countri
 
     const quickLinks = [
         { icon: Home, label: "Trang chủ", href: "/" },
-        { icon: SlidersHorizontal, label: "Lọc phim", href: "/danh-sach/phim-moi" },
+        { icon: SlidersHorizontal, label: "Lọc phim", href: "/danh-sach/phim-moi-cap-nhat" },
         { icon: CalendarDays, label: "Lịch chiếu", href: "/danh-sach/phim-chieu-rap" },
         {
             icon: User, label: "Tài khoản", action: () => {

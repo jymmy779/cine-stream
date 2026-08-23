@@ -157,7 +157,7 @@ export default function HomeClient({ prefetched, activeEvent, initialTopics }: {
                 <LazyRow id="lofilm-nominated" estimatedHeight="460px" skeleton={<EditorChoiceRowSkeleton />}>
                     <EditorChoiceRow
                         title="Editor's Choice"
-                        viewAllLink="/danh-sach/phim-moi"
+                        viewAllLink="/danh-sach/phim-moi-cap-nhat"
                         initialMovies={prefetched.nominated}
                     />
                 </LazyRow>

@@ -53,10 +53,11 @@ export default function Header() {
         window.addEventListener("scroll", handleScroll, { passive: true });
         window.addEventListener("resize", handleResize, { passive: true });
 
-        axios.get<MenuItem[]>(`/api/proxy?url=${encodeURIComponent(`${INTERNAL_API_URL}/the-loai`)}&revalidate=86400`)
+        axios.get<MenuItem[]>(`/api/proxy?url=${encodeURIComponent(`${INTERNAL_API_URL}/the-loai`)}&revalidate=60&_t=${Date.now()}`)
             .then((res) => {
                 const items = (res.data as any).data?.items || (res.data as any).items || res.data;
-                const list: MenuItem[] = Array.isArray(items) ? [...items] : [];
+                const rawList: MenuItem[] = Array.isArray(items) ? [...items] : [];
+                const list = rawList.filter(i => i && i.slug && !/^\d{2,4}$/.test(i.slug));
                 if (!list.some(i => i.slug === "hoat-hinh")) {
                     list.push({ _id: "hoat-hinh", name: "Hoạt hình", slug: "hoat-hinh" });
                     list.sort((a, b) => a.name.localeCompare(b.name, "vi"));
@@ -65,10 +66,12 @@ export default function Header() {
             })
             .catch((err) => console.error("Lỗi fetch thể loại:", err));
 
-        axios.get<MenuItem[]>(`/api/proxy?url=${encodeURIComponent(`${INTERNAL_API_URL}/quoc-gia`)}&revalidate=86400`)
+        axios.get<MenuItem[]>(`/api/proxy?url=${encodeURIComponent(`${INTERNAL_API_URL}/quoc-gia`)}&revalidate=60&_t=${Date.now()}`)
             .then((res) => {
                 const items = (res.data as any).data?.items || (res.data as any).items || res.data;
-                setCountries(Array.isArray(items) ? items : []);
+                const rawList: MenuItem[] = Array.isArray(items) ? items : [];
+                const list = rawList.filter(i => i && i.slug && !/^\d{2,4}$/.test(i.slug));
+                setCountries(list);
             })
             .catch((err) => console.error("Lỗi fetch quốc gia:", err));
 
@@ -279,10 +282,10 @@ export default function Header() {
 
                     {/* Tab 2: Khám phá */}
                     <TransitionLink
-                        href="/danh-sach/phim-moi"
+                        href="/danh-sach/phim-moi-cap-nhat"
                         onClick={(e) => {
                             if (isKhamPhaActive) { e.preventDefault(); return; }
-                            setOptimisticTab('/danh-sach/phim-moi');
+                            setOptimisticTab('/danh-sach/phim-moi-cap-nhat');
                         }}
                         className={`relative h-[42px] md:h-[46px] rounded-full flex items-center justify-center transition-all duration-200 ease-out active:scale-90 ${isKhamPhaActive
                             ? "bg-[#D497FF]/15 text-[#D497FF] px-3.5 md:px-4 gap-2 md:gap-2.5"

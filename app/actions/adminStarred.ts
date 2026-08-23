@@ -1,12 +1,18 @@
 "use server";
-import { createClient } from "@/app/utils/supabase/server";
+import { createClient as createSupabaseClient } from "@supabase/supabase-js";
 import { revalidatePath } from "next/cache";
 
-// Cần tạo một client với SERVICE ROLE để có thể gọi redis
+// Cần tạo một client với SERVICE ROLE để truy cập bảng starred_movies không bị RLS chặn
 import { redis } from "@/app/lib/fetch-with-redis";
 
+function getAdminSupabase() {
+    const url = process.env.NEXT_PUBLIC_SUPABASE_URL!;
+    const key = process.env.SUPABASE_SERVICE_ROLE_KEY || process.env.NEXT_PUBLIC_SUPABASE_SERVICE_ROLE_KEY || process.env.NEXT_PUBLIC_SUPABASE_ANON_KEY!;
+    return createSupabaseClient(url, key, { auth: { persistSession: false } });
+}
+
 export async function getStarredMovies() {
-    const supabase = await createClient();
+    const supabase = getAdminSupabase();
     
     // Tự động dọn dẹp các phim đã hết hạn trong DB
     await supabase
@@ -32,7 +38,7 @@ export async function getStarredMovies() {
 }
 
 export async function addStarredMovie(slug: string, name: string, thumb_url: string, poster_url: string, expires_in_days: number | null) {
-    const supabase = await createClient();
+    const supabase = getAdminSupabase();
     
     // Dọn dẹp phim hết hạn trước khi tính priority
     await supabase
@@ -81,7 +87,7 @@ export async function addStarredMovie(slug: string, name: string, thumb_url: str
 }
 
 export async function removeStarredMovie(id: string) {
-    const supabase = await createClient();
+    const supabase = getAdminSupabase();
     
     const { error } = await supabase
         .from("starred_movies")
@@ -97,7 +103,7 @@ export async function removeStarredMovie(id: string) {
 }
 
 export async function updateStarredPriority(id: string, priority: number) {
-    const supabase = await createClient();
+    const supabase = getAdminSupabase();
     
     const { error } = await supabase
         .from("starred_movies")
@@ -113,7 +119,7 @@ export async function updateStarredPriority(id: string, priority: number) {
 }
 
 export async function updateStarredExpiry(id: string, expires_in_days: number | null) {
-    const supabase = await createClient();
+    const supabase = getAdminSupabase();
 
     let expires_at: string | null = null;
     if (expires_in_days !== null && expires_in_days > 0) {
