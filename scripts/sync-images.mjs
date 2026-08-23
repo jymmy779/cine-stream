@@ -425,13 +425,63 @@ async function processActorImages(movie) {
     }
 }
 
-// ─── Fetch danh sách phim từ phimapi.com ──────────────────────────────────────
+// ─── Fetch danh sách phim từ Database SQLite hoặc API ───────────────────────
 async function fetchAllMovies() {
+    // 1. ƯU TIÊN: Đọc trực tiếp từ SQLite Database (Chứa đầy đủ 55.000+ phim của cả 3 nguồn: KKPhim, Ophim, NguonC)
+    try {
+        let PrismaClient;
+        try {
+            PrismaClient = (await import('../../backend/node_modules/@prisma/client/index.js')).PrismaClient;
+        } catch {
+            try {
+                PrismaClient = (await import('../backend/node_modules/@prisma/client/index.js')).PrismaClient;
+            } catch {
+                try {
+                    PrismaClient = (await import('@prisma/client')).PrismaClient;
+                } catch {}
+            }
+        }
+
+        if (PrismaClient) {
+            console.log('⚡ [Database] Kết nối SQLite Database thành công!');
+            const prisma = new PrismaClient();
+            const totalInDb = await prisma.movie.count();
+            console.log(`⚡ [Database] Đang tải ${totalInDb} phim từ Database (KKPhim + Ophim + NguonC)...`);
+
+            const dbMovies = await prisma.movie.findMany({
+                select: {
+                    slug: true,
+                    name: true,
+                    poster_url: true,
+                    thumb_url: true,
+                    tmdb_id: true,
+                    tmdb_type: true,
+                },
+                take: LIMIT === Infinity ? undefined : LIMIT,
+                orderBy: { updated_at: 'desc' }
+            });
+
+            await prisma.$disconnect();
+            console.log(`✅ [Database] Đã tải thành công ${dbMovies.length} phim từ Database.`);
+
+            return dbMovies.map(m => ({
+                name: m.name,
+                slug: m.slug,
+                poster_url: m.poster_url,
+                thumb_url: m.thumb_url,
+                tmdb: { id: m.tmdb_id || '', type: m.tmdb_type || 'movie' }
+            }));
+        }
+    } catch (dbErr) {
+        console.warn('⚠️ [Database] Không thể đọc trực tiếp từ DB, chuyển sang quét API:', dbErr.message);
+    }
+
+    // 2. DỰ PHÒNG: Quét từ API (Dùng cho môi trường GitHub Actions khi không có DB)
     const allMovies = [];
     let page = START_PAGE;
     const maxPage = MAX_PAGES_LIMIT;
 
-    console.log('[phimapi] Đang fetch danh sách phim...');
+    console.log('[phimapi] Đang fetch danh sách phim từ API...');
 
     while (page <= maxPage) {
         try {

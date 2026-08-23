@@ -47,3 +47,7 @@ backend/dist/
 backend/*.db
 backend/*.db-journal
 backend/.sync_state.json
+
+# sync scripts state & logs
+scripts/sync-state.json
+scripts/failed-images.json
