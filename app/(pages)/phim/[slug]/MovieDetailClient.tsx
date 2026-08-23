@@ -93,9 +93,9 @@ export default function MovieDetailClient({
             const hasEpThuyetMinh = server.server_data?.some((ep: any) => (ep.name || '').toLowerCase().includes('thuyết minh') || (ep.slug || '').includes('thuyet-minh'));
 
             if ((hasVietsub && hasLongTieng) || (hasLongTieng && hasEpLongTieng) || (hasVietsub && hasEpLongTieng)) {
-                cleanName = 'Vietsub + LT';
+                cleanName = 'Vietsub + Lồng Tiếng';
             } else if ((hasVietsub && hasThuyetMinh) || (hasThuyetMinh && hasEpThuyetMinh) || (hasVietsub && hasEpThuyetMinh)) {
-                cleanName = 'Vietsub + TM';
+                cleanName = 'Vietsub + Thuyết Minh';
             } else if (hasThuyetMinh) {
                 cleanName = 'Thuyết Minh';
             } else if (hasLongTieng) {

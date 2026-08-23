@@ -46,6 +46,8 @@ backend/node_modules/
 backend/dist/
 backend/*.db
 backend/*.db-journal
+backend/*.db-wal
+backend/*.db-shm
 backend/.sync_state.json
 
 # sync scripts state & logs

@@ -3,5 +3,7 @@ dist
 .env
 dev.db
 dev.db-journal
+dev.db-wal
+dev.db-shm
 .sync_state.json
 *.log
