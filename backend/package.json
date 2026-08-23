@@ -11,7 +11,7 @@
     "prisma:migrate": "prisma migrate dev",
     "prisma:studio": "prisma studio",
     "sync:now": "tsx src/scripts/manualSync.ts",
-    "seed:initial": "tsx src/scripts/seedInitial.ts"
+    "sync:cats": "tsx src/scripts/syncMissingCategories.ts"
   },
   "dependencies": {
     "@prisma/client": "^6.4.0",
