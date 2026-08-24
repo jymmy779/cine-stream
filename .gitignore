@@ -44,10 +44,12 @@ next-env.d.ts
 # backend
 backend/node_modules/
 backend/dist/
-backend/*.db
-backend/*.db-journal
-backend/*.db-wal
-backend/*.db-shm
+backend/**/*.db
+backend/**/*.db-journal
+backend/**/*.db-wal
+backend/**/*.db-shm
+*.db-shm
+*.db-wal
 backend/.sync_state.json
 
 # sync scripts state & logs
