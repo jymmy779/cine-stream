@@ -6,7 +6,7 @@ import { SITE_URL, SITE_DOMAIN } from '@/app/config/site'
 // In-memory cache cho maintenance mode (tránh fetch Supabase mỗi request)
 // next: { revalidate } trong middleware KHÔNG hoạt động như Server Components
 let maintenanceCache: { value: boolean; expiresAt: number } | null = null;
-const MAINTENANCE_CACHE_TTL_MS = 60_000; // Cache 60 giây
+const MAINTENANCE_CACHE_TTL_MS = 5_000; // Cache 5 giây để phản hồi bật/tắt tức thì
 
 export async function middleware(request: NextRequest) {
   const { pathname } = request.nextUrl;

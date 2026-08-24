@@ -24,7 +24,7 @@ export default async function AdminPage() {
     }
 
     const [settings, starredRes, systemStatsRes] = await Promise.all([
-        getSiteSettings(),
+        getSiteSettings(true),
         getStarredMovies(),
         fetchSystemStats(),
     ]);

@@ -1,39 +1,38 @@
 "use server";
 import { createClient } from "@/app/utils/supabase/server";
-import { revalidatePath, revalidateTag } from "next/cache";
-import { unstable_cache } from "next/cache";
+import { revalidatePath } from "next/cache";
 
-export const getSiteSettings = unstable_cache(
-    async () => {
-        try {
-            const supabase = await createClient();
-            const { data, error } = await supabase.from("site_settings").select("*");
+let cachedSettings: { data: any; expiresAt: number } | null = null;
+const CACHE_TTL = 15_000; // Cache 15 giây cho layout, siêu nhanh
 
-            if (error || !data) {
-                // Fallback nhanh
-                await new Promise(r => setTimeout(r, 500));
-                const retry = await supabase.from("site_settings").select("*");
-                if (retry.error || !retry.data) {
-                    return { maintenance_mode: false, active_event: "none" };
-                }
-                const settings: any = {};
-                retry.data.forEach((item: any) => { settings[item.key] = item.value; });
-                return settings;
-            }
+export async function getSiteSettings(forceFresh = false) {
+    const now = Date.now();
+    if (!forceFresh && cachedSettings && now < cachedSettings.expiresAt) {
+        return cachedSettings.data;
+    }
 
-            const settings: any = {};
-            data.forEach((item: any) => { settings[item.key] = item.value; });
-            return settings;
-        } catch (error) {
-            console.error("Error fetching site settings:", error);
-            return { maintenance_mode: false, active_event: "none" };
+    try {
+        const supabase = await createClient();
+        const { data, error } = await supabase.from("site_settings").select("*");
+
+        if (error || !data) {
+            return cachedSettings?.data || { maintenance_mode: false, active_event: "none" };
         }
-    },
-    ['site-settings-cache'],
-    { revalidate: 3600, tags: ['site-settings'] }
-);
+
+        const settings: any = {};
+        data.forEach((item: any) => { settings[item.key] = item.value; });
+        cachedSettings = { data: settings, expiresAt: now + CACHE_TTL };
+        return settings;
+    } catch (error) {
+        console.error("Error fetching site settings:", error);
+        return cachedSettings?.data || { maintenance_mode: false, active_event: "none" };
+    }
+}
 
 export async function updateSiteSetting(key: string, value: any) {
+    // Xóa cache ngay lập tức để request tiếp theo đọc giá trị mới
+    cachedSettings = null;
+
     const supabase = await createClient();
     const { error } = await supabase
         .from("site_settings")
@@ -43,6 +42,7 @@ export async function updateSiteSetting(key: string, value: any) {
         return { error: error.message };
     }
 
-    revalidatePath("/", "layout"); // Revalidate all layouts to apply settings
+    revalidatePath("/", "layout");
+    revalidatePath("/admin/dashboard");
     return { success: true };
 }
