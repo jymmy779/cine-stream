@@ -39,12 +39,17 @@ export function useMovieCatalog({ baseApiUrl, itemsPerPage = 32, slug, initialDa
     const initialFilterOpen = searchParams.get("filter") === "open";
 
     // Determine if we have initial data and it matches current URL state (page 1, no extra filters)
+    // For country/category pages: the slug-based filter IS the page context, not an "extra" filter.
+    const isCountryPage = baseApiUrl.includes("quoc-gia");
+    const isCategoryPage = baseApiUrl.includes("the-loai");
     const hasValidInitialData = !!(
         initialData &&
         initialData.movies.length > 0 &&
         initialPage === 1 &&
-        !initialFilters.category &&
-        !initialFilters.country &&
+        // For country pages: allow initial data even if country filter = slug
+        (isCountryPage ? (!initialFilters.category && (initialFilters.country === "" || initialFilters.country === slug)) : !initialFilters.country) &&
+        // For category pages: allow initial data even if category filter = slug
+        (isCategoryPage ? (!initialFilters.country && (initialFilters.category === "" || initialFilters.category === slug)) : !initialFilters.category) &&
         !initialFilters.year &&
         !initialFilters.status &&
         !initialFilters.lang &&
@@ -160,8 +165,7 @@ export function useMovieCatalog({ baseApiUrl, itemsPerPage = 32, slug, initialDa
                 };
                 let catList = extractArray(catRes.data);
                 if (catList.length > 0 && !catList.some((i: any) => i.slug === "hoat-hinh")) {
-                    catList = [...catList, { _id: "hoat-hinh", name: "Hoạt hình", slug: "hoat-hinh" }];
-                    catList.sort((a: any, b: any) => a.name.localeCompare(b.name, "vi"));
+                    catList = [...catList, { _id: "hoat-hinh", name: "Hoạt Hình", slug: "hoat-hinh" }];
                 }
                 setCategories(catList);
                 setCountries(extractArray(counRes.data));

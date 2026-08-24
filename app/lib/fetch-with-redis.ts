@@ -127,12 +127,28 @@ export const fetchWithRedis = cache(async (url: string, options?: RequestInit & 
       // Fallback: Nếu gọi Backend nội bộ thất bại, tự động thử lại với KKPhim API trực tiếp
       if (url.includes('localhost:5000') || url.includes('127.0.0.1:5000') || url.includes('/api/v1')) {
         try {
-          const fallbackUrl = url
-            .replace(/http:\/\/127\.0\.0\.1:5000\/api\/v1/g, 'https://phimapi.com/v1/api')
-            .replace(/http:\/\/localhost:5000\/api\/v1/g, 'https://phimapi.com/v1/api')
-            .replace(/http:\/\/127\.0\.0\.1:5000\/v1\/api/g, 'https://phimapi.com/v1/api')
-            .replace(/http:\/\/localhost:5000\/v1\/api/g, 'https://phimapi.com/v1/api')
-            .replace('https://phimapi.com/v1/api/phim/', 'https://phimapi.com/phim/');
+          // Strip internal base URL to get the path portion
+          let fallbackUrl = url
+            .replace(/https?:\/\/[^/]+\/api\/v1/g, 'https://phimapi.com/v1/api')
+            .replace(/https?:\/\/localhost:\d+\/api\/v1/g, 'https://phimapi.com/v1/api')
+            .replace(/https?:\/\/127\.0\.0\.1:\d+\/api\/v1/g, 'https://phimapi.com/v1/api');
+
+          // KKPhim doesn't have /quoc-gia/:slug or /the-loai/:slug routes directly.
+          // Map them to the correct danh-sach endpoint with filter params.
+          const quocGiaMatch = fallbackUrl.match(/phimapi\.com\/v1\/api\/quoc-gia\/([^?/]+)/);
+          if (quocGiaMatch) {
+            const qs = fallbackUrl.includes('?') ? fallbackUrl.split('?')[1] : '';
+            fallbackUrl = `https://phimapi.com/v1/api/danh-sach/phim-moi-cap-nhat?quoc-gia=${quocGiaMatch[1]}${qs ? '&' + qs : ''}`;
+          }
+
+          const theLoaiMatch = fallbackUrl.match(/phimapi\.com\/v1\/api\/the-loai\/([^?/]+)/);
+          if (theLoaiMatch) {
+            const qs = fallbackUrl.includes('?') ? fallbackUrl.split('?')[1] : '';
+            fallbackUrl = `https://phimapi.com/v1/api/danh-sach/phim-moi-cap-nhat?the-loai=${theLoaiMatch[1]}${qs ? '&' + qs : ''}`;
+          }
+
+          // Fix phim detail URL format
+          fallbackUrl = fallbackUrl.replace('https://phimapi.com/v1/api/phim/', 'https://phimapi.com/phim/');
 
           const fbResponse = await axios.get(fallbackUrl, {
             timeout: 5000,

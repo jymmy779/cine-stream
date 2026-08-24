@@ -625,11 +625,12 @@ export function normalizeCountry(raw: { name?: string; slug?: string } | string)
 /**
  * Chuẩn hóa danh sách thể loại: Loại bỏ trùng lặp và tag rác
  */
-export function normalizeCategories(list: any[]): TaxonomyItem[] {
-  if (!Array.isArray(list)) return [];
+export function normalizeCategories(list: any | any[]): TaxonomyItem[] {
+  if (!list) return [];
+  const validList = Array.isArray(list) ? list : [list];
   const map = new Map<string, TaxonomyItem>();
 
-  for (const item of list) {
+  for (const item of validList) {
     if (!item) continue;
     const normalized = normalizeCategory(item);
     if (normalized && normalized.slug && !map.has(normalized.slug)) {

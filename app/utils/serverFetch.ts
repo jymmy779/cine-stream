@@ -83,8 +83,7 @@ export async function fetchCatalogData(
 
         let parsedCategories = parseList(categoriesData);
         if (parsedCategories.length > 0 && !parsedCategories.some(i => i.slug === "hoat-hinh")) {
-            parsedCategories = [...parsedCategories, { _id: "hoat-hinh", name: "Hoạt hình", slug: "hoat-hinh" }];
-            parsedCategories.sort((a, b) => a.name.localeCompare(b.name, "vi"));
+            parsedCategories = [...parsedCategories, { _id: "hoat-hinh", name: "Hoạt Hình", slug: "hoat-hinh" }];
         }
 
         return {

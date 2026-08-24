@@ -544,12 +544,18 @@ export async function syncIncremental(
       if (src === "kkphim") {
         const p = await fetchKKPhimUpdatedPage(page);
         items = p?.items || [];
+        if (!p) addLiveLog(`⚠️ [KKPhim] Fetch trang ${page} thất bại (null response) — kiểm tra kết nối mạng backend`, "error");
+        else if (items.length === 0) addLiveLog(`⚠️ [KKPhim] Trang ${page} trả về 0 phim`, "error");
       } else if (src === "vsmov") {
         const p = await fetchVSMovUpdatedPage(page);
         items = p?.items || [];
+        if (!p) addLiveLog(`⚠️ [VSMov] Fetch trang ${page} thất bại (null response) — kiểm tra kết nối mạng backend`, "error");
+        else if (items.length === 0) addLiveLog(`⚠️ [VSMov] Trang ${page} trả về 0 phim`, "error");
       } else if (src === "nguonc") {
         const p = await fetchNguonCUpdatedPage(page);
         items = p?.items || [];
+        if (!p) addLiveLog(`⚠️ [NguonC] Fetch trang ${page} thất bại (null response) — kiểm tra kết nối mạng backend`, "error");
+        else if (items.length === 0) addLiveLog(`⚠️ [NguonC] Trang ${page} trả về 0 phim`, "error");
       }
 
       for (const item of items) {
@@ -682,29 +688,40 @@ export async function syncBulk(options?: {
         if (isBulkSyncCancelled) break;
         const chunk = items.slice(i, i + concurrency);
 
-        await Promise.all(
+        // 1. Fetch details in parallel (network I/O — safe to parallelize)
+        const details = await Promise.all(
           chunk.map(async (item) => {
-            if (!item.slug) return;
+            if (!item.slug) return null;
             let detail: KKPhimDetailResponse | null = null;
             if (src === "kkphim") detail = await fetchKKPhimMovieDetail(item.slug);
             else if (src === "vsmov") detail = await fetchVSMovMovieDetail(item.slug);
             else if (src === "nguonc") detail = await fetchNguonCMovieDetail(item.slug);
-
-            if (detail) {
-              const res = await upsertMovieDetail(detail, prefix);
-              if (res.success) {
-                totalSynced++;
-                if (res.isNew) {
-                  addLiveLog(`[+ MỚI] ${item.name} [${prefix}] (Trang ${page})`, "new");
-                } else {
-                  addLiveLog(`[~ CẬP NHẬT] ${item.name} [${prefix}] (Trang ${page})`, "update");
-                }
-              }
-            }
+            return detail ? { detail, name: item.name } : null;
           })
         );
 
+        // 2. Write to DB sequentially (SQLite is single-writer — no concurrent writes)
+        for (const entry of details) {
+          if (!entry) continue;
+          const res = await upsertMovieDetail(entry.detail, prefix);
+          if (res.success) {
+            totalSynced++;
+            if (res.isNew) {
+              addLiveLog(`[+ MỚI] ${entry.name} [${prefix}] (Trang ${page})`, "new");
+            } else {
+              addLiveLog(`[~ CẬP NHẬT] ${entry.name} [${prefix}] (Trang ${page})`, "update");
+            }
+          }
+        }
+
         await new Promise((r) => setTimeout(r, 60));
+      }
+
+      // WAL checkpoint every 50 pages to prevent WAL file from growing unbounded
+      if ((page - startPage + 1) % 50 === 0) {
+        try {
+          await prisma.$executeRawUnsafe(`PRAGMA wal_checkpoint(PASSIVE);`);
+        } catch {}
       }
 
       const percentNum = Math.min(100, Math.max(0, Math.round(((page - startPage + 1) / (totalPages - startPage + 1)) * 100)));

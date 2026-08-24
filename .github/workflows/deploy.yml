@@ -82,7 +82,7 @@ jobs:
               cd ..
             fi
             
-            # 4. Khởi động lại toàn bộ tiến trình
-            pm2 reload all
+            # 4. Khởi động lại toàn bộ tiến trình (dùng restart, không phải reload, để đảm bảo cron được khởi tạo lại)
+            pm2 restart all
             pm2 save
 
