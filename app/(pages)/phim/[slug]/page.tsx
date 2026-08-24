@@ -9,7 +9,7 @@ export const revalidate = 300; // Cache page for 300 seconds (5 phút ISR)
 // API base URL
 const API_BASE = INTERNAL_API_URL;
 
-import { getMovieDetail } from "@/app/utils/movieFetcher";
+import { getMovieDetail, getMovieSeo } from "@/app/utils/movieFetcher";
 
 
 
@@ -22,13 +22,12 @@ export async function generateMetadata({
     params: Promise<{ slug: string }>;
 }): Promise<Metadata> {
     const { slug } = await params;
-    const detail = await getMovieDetail(slug);
+    const movie = await getMovieSeo(slug);
 
-    if (!detail) {
+    if (!movie) {
         return { title: "Phim không tìm thấy - LoFilm" };
     }
 
-    const movie = detail.movie;
     const description = movie.content
         ? movie.content.replace(/<[^>]*>/g, '').substring(0, 160)
         : `Xem phim ${movie.name} (${movie.origin_name}) vietsub chất lượng cao tại LoFilm`;
@@ -42,8 +41,8 @@ export async function generateMetadata({
         `${movie.name} thuyet minh`,
         `${movie.name} full hd`,
         `${movie.name} lofilm`,
-        ...(movie.category?.map(c => c.name) || []),
-        ...(movie.category?.map(c => `phim ${c.name}`) || []),
+        ...(movie.category?.map((c: any) => c.name) || []),
+        ...(movie.category?.map((c: any) => `phim ${c.name}`) || []),
         ...(movie.actor || []),
         ...(movie.director || []),
         "LoFilm", "xem phim online", "phim moi"

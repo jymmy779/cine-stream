@@ -37,45 +37,26 @@ interface Props {
     searchParams: Promise<{ [key: string]: string | string[] | undefined }>;
 }
 
-import { getMovieDetail } from "@/app/utils/movieFetcher";
+import { getMovieDetail, getMovieSeo } from "@/app/utils/movieFetcher";
 
 import { SITE_URL, getAbsoluteUrl } from "@/app/config/site";
 
 export async function generateMetadata({ params }: Props): Promise<Metadata> {
     const { slug, episodeSlug } = await params;
-    const data = await getMovieDetail(slug);
+    const movie = await getMovieSeo(slug);
 
-    if (!data || !data.movie) {
+    if (!movie) {
         return { title: "Xem phim - LoFilm" };
     }
 
-    const { movie, episodes } = data;
-
-    // Tìm tập phim hiện tại
+    // Lấy tập phim hiện tại trực tiếp từ URL (không cần parse array để tăng tốc tối đa Bước 1)
     let currentEpisodeName = "";
-    if (episodes && episodes.length > 0) {
-        const cleanTargetSlug = episodeSlug.replace(/^tap-/, "").toLowerCase();
-        const allEpisodes = episodes.flatMap((server: any) => server.server_data);
-
-        const episode = allEpisodes.find((ep: any) => {
-            const epSlug = ep.slug.toLowerCase();
-            const epCleanSlug = epSlug.replace(/^tap-/, "");
-            return (
-                epSlug === episodeSlug ||
-                epSlug === cleanTargetSlug ||
-                epCleanSlug === cleanTargetSlug ||
-                (episodeSlug === "tap-full" && epSlug === "full") ||
-                ep.name.toLowerCase() === `tập ${cleanTargetSlug}` ||
-                ep.name.toLowerCase() === `tập ${cleanTargetSlug.replace(/^0+/, "")}` ||
-                ep.name.toLowerCase() === cleanTargetSlug ||
-                epCleanSlug.replace(/^0+/, "") === cleanTargetSlug.replace(/^0+/, "")
-            );
-        });
-
-        if (episode) {
-            const epName = (episode.name || "").trim();
-            const formattedEpName = /^tập\s*/i.test(epName) ? epName : `Tập ${epName}`;
-            currentEpisodeName = ` - ${formattedEpName}`;
+    if (episodeSlug) {
+        const cleanSlug = episodeSlug.replace(/^tap-/, "").toLowerCase();
+        if (cleanSlug === "full") {
+            currentEpisodeName = " - Full";
+        } else {
+            currentEpisodeName = ` - Tập ${cleanSlug.toUpperCase()}`;
         }
     }
 
