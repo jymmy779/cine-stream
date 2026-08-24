@@ -499,7 +499,66 @@ async function fetchAllMovies() {
         console.warn('⚠️ [Database] Không thể đọc trực tiếp từ DB, chuyển sang quét API:', dbErr.message);
     }
 
-    // 2. DỰ PHÒNG: Quét từ API (Dùng cho môi trường GitHub Actions khi không có DB)
+    // 2. DỰ PHÒNG 1: Fetch từ Backend API riêng (Nếu có cấu hình BACKEND_API_URL)
+    const backendApiUrl = process.env.BACKEND_API_URL || process.env.NEXT_PUBLIC_INTERNAL_API_URL;
+    const syncSecret = process.env.SYNC_SECRET_KEY || process.env.ADMIN_PASSWORD || 'admin123';
+    const hoursArg = args.find(a => a.startsWith('--hours='));
+    const filterHours = hoursArg ? parseInt(hoursArg.split('=')[1]) : (args.includes('--all') ? 0 : 0);
+    
+    if (backendApiUrl && !backendApiUrl.includes('127.0.0.1') && !backendApiUrl.includes('localhost')) {
+        console.log(`🌐 [Backend API] Đang lấy danh sách phim từ máy chủ nội bộ: ${backendApiUrl} (Lọc: ${filterHours > 0 ? `${filterHours} giờ qua` : 'Toàn bộ Database'})...`);
+        const allMovies = [];
+        let page = START_PAGE;
+        const maxPage = MAX_PAGES_LIMIT;
+
+        while (page <= maxPage) {
+            try {
+                const hoursQuery = filterHours > 0 ? `&hours=${filterHours}` : '';
+                const endpoint = `${backendApiUrl.replace(/\/$/, '')}/admin/sync/images-queue?page=${page}&limit=50${hoursQuery}`;
+                const res = await fetch(endpoint, {
+                    headers: { 'x-sync-secret': syncSecret },
+                    signal: AbortSignal.timeout(15000),
+                });
+                
+                if (!res.ok) {
+                    console.warn(`  ⚠️ Backend API trả về HTTP ${res.status}, bỏ qua...`);
+                    break;
+                }
+
+                const json = await res.json();
+                const items = json?.data?.items || [];
+                if (!items.length) break;
+
+                allMovies.push(...items.map(m => ({
+                    name: m.name,
+                    slug: m.slug,
+                    poster_url: m.poster_url,
+                    thumb_url: m.thumb_url,
+                    tmdb: { id: m.tmdb_id || '', type: m.tmdb_type || 'movie' }
+                })));
+
+                saveCheckpoint(page);
+                const totalPages = json?.data?.totalPages || 1;
+                console.log(`  [Backend] Trang ${page}/${totalPages}: ${items.length} phim (tổng: ${allMovies.length})`);
+
+                if (page >= totalPages || page >= maxPage) break;
+                if (allMovies.length >= LIMIT) break;
+
+                page++;
+                await sleep(300);
+            } catch (err) {
+                console.warn(`  ⚠️ Lỗi fetch Backend API trang ${page}: ${err.message}. Chuyển sang fallback...`);
+                break;
+            }
+        }
+
+        if (allMovies.length > 0) {
+            console.log(`✅ [Backend API] Lấy thành công ${allMovies.length} phim từ Database nội bộ.`);
+            return allMovies.slice(0, LIMIT === Infinity ? undefined : LIMIT);
+        }
+    }
+
+    // 3. DỰ PHÒNG 2: Quét từ API công cộng (Dùng khi không kết nối được Backend)
     const allMovies = [];
     let page = START_PAGE;
     const maxPage = MAX_PAGES_LIMIT;

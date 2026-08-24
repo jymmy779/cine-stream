@@ -8,9 +8,9 @@ on:
   workflow_dispatch:
     inputs:
       args:
-        description: 'Tham số (vd: --new-only --start-page=16 --max-pages=30)'
+        description: 'Tham số (vd: --new-only hoặc --new-only --max-pages=50)'
         required: false
-        default: '--new-only --max-pages=15'
+        default: '--new-only --max-pages=15 --hours=48'
 
 jobs:
   sync:
@@ -38,5 +38,7 @@ jobs:
           R2_BUCKET_NAME: ${{ secrets.R2_BUCKET_NAME }}
           NEXT_PUBLIC_SUPABASE_URL: ${{ secrets.NEXT_PUBLIC_SUPABASE_URL }}
           NEXT_PUBLIC_SUPABASE_ANON_KEY: ${{ secrets.NEXT_PUBLIC_SUPABASE_ANON_KEY }}
+          BACKEND_API_URL: ${{ secrets.BACKEND_API_URL || 'https://www.munos.store/api/v1' }}
+          SYNC_SECRET_KEY: ${{ secrets.SYNC_SECRET_KEY || secrets.SERVER_PASSWORD }}
         # Mặc định chạy với tham số từ input (khi chạy tay) hoặc quét 15 trang mới nhất (khi chạy cron)
         run: node scripts/sync-images.mjs ${{ github.event.inputs.args || '--new-only --max-pages=15' }}

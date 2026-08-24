@@ -9,9 +9,7 @@ export const revalidate = 300; // Cache page for 300 seconds (5 phút ISR)
 // API base URL
 const API_BASE = INTERNAL_API_URL;
 
-import { getMovieDetail, getMovieSeo } from "@/app/utils/movieFetcher";
-
-
+import { getMovieDetail } from "@/app/utils/movieFetcher";
 
 import { getAbsoluteUrl } from "@/app/config/site";
 
@@ -22,7 +20,8 @@ export async function generateMetadata({
     params: Promise<{ slug: string }>;
 }): Promise<Metadata> {
     const { slug } = await params;
-    const movie = await getMovieSeo(slug);
+    const detail = await getMovieDetail(slug);
+    const movie = detail?.movie;
 
     if (!movie) {
         return { title: "Phim không tìm thấy - LoFilm" };

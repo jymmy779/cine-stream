@@ -9,6 +9,7 @@ import {
   mergeMoviesHandler,
   getSyncLogs,
   getSystemStats,
+  getPendingImagesForSync,
 } from "../controllers/adminController.js";
 import { clearApiMemoryCache } from "../controllers/movieController.js";
 
@@ -18,6 +19,7 @@ router.get("/stats", getSystemStats);
 router.post("/movies/import", importMovie);
 router.post("/movies/merge", mergeMoviesHandler);
 
+router.get("/sync/images-queue", getPendingImagesForSync);
 router.post("/sync/instant", triggerInstantSync);
 router.get("/sync/status", getSyncFullStatus);
 router.post("/sync/cron/toggle", toggleCronJob);

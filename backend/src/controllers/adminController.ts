@@ -249,3 +249,54 @@ export async function getSystemStats(req: Request, res: Response) {
   }
 }
 
+export async function getPendingImagesForSync(req: Request, res: Response) {
+  try {
+    const authHeader = req.headers["x-sync-secret"] || req.query.secret;
+    const adminSecret = process.env.ADMIN_PASSWORD || "admin123";
+    if (authHeader !== adminSecret && process.env.NODE_ENV === "production") {
+      return res.status(401).json({ status: false, msg: "Unauthorized" });
+    }
+
+    const page = Math.max(1, parseInt(req.query.page as string) || 1);
+    const limit = Math.min(200, Math.max(1, parseInt(req.query.limit as string) || 50));
+    const hours = parseInt(req.query.hours as string) || 0;
+
+    const where: any = {};
+    if (hours > 0) {
+      const sinceDate = new Date(Date.now() - hours * 3600 * 1000);
+      where.updated_at = { gte: sinceDate };
+    }
+
+    const [total, movies] = await Promise.all([
+      prisma.movie.count({ where }),
+      prisma.movie.findMany({
+        where,
+        select: {
+          id: true,
+          slug: true,
+          name: true,
+          thumb_url: true,
+          poster_url: true,
+          updated_at: true,
+        },
+        orderBy: { updated_at: "desc" },
+        skip: (page - 1) * limit,
+        take: limit,
+      }),
+    ]);
+
+    return res.json({
+      status: true,
+      data: {
+        page,
+        limit,
+        total,
+        totalPages: Math.ceil(total / limit),
+        items: movies,
+      },
+    });
+  } catch (error: any) {
+    return res.status(500).json({ status: false, msg: error.message });
+  }
+}
+

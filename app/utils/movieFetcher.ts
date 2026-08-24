@@ -6,55 +6,6 @@ import { MovieDetailResponse } from "@/app/types/movie";
 
 import { INTERNAL_API_URL } from "@/app/utils/apiConfig";
 
-export const getMovieSeo = unstable_cache(async (slug: string) => {
-    try {
-        const cleanSlug = typeof slug === "string" ? decodeURIComponent(slug).trim() : slug;
-        const supabase = await createClient();
-        
-        // Fetch song song: Độc quyền từ Supabase và Chi tiết từ Backend nội bộ (Chỉ lấy info cơ bản)
-        const [exclusiveRes, phimApiRes] = await Promise.allSettled([
-            supabase
-                .from('exclusive_movies')
-                .select(`name, origin_name, content, thumb_url, poster_url, category, actor, director`)
-                .eq('slug', cleanSlug)
-                .single(),
-            fetchWithRedis(`${INTERNAL_API_URL}/phim/${cleanSlug}`)
-        ]);
-
-        const exclusiveMovie = exclusiveRes.status === 'fulfilled' ? exclusiveRes.value.data : null;
-        const phimApiData = phimApiRes.status === 'fulfilled' ? phimApiRes.value : null;
-
-        if (exclusiveMovie) {
-             return {
-                 name: exclusiveMovie.name,
-                 origin_name: exclusiveMovie.origin_name,
-                 content: exclusiveMovie.content,
-                 thumb_url: exclusiveMovie.thumb_url,
-                 poster_url: exclusiveMovie.poster_url,
-                 category: exclusiveMovie.category || [],
-                 actor: exclusiveMovie.actor || [],
-                 director: exclusiveMovie.director || [],
-             };
-        }
-
-        if (phimApiData && phimApiData.status && phimApiData.movie) {
-            return {
-                name: phimApiData.movie.name,
-                origin_name: phimApiData.movie.origin_name,
-                content: phimApiData.movie.content,
-                thumb_url: phimApiData.movie.thumb_url,
-                poster_url: phimApiData.movie.poster_url,
-                category: phimApiData.movie.category || [],
-                actor: phimApiData.movie.actor || [],
-                director: phimApiData.movie.director || [],
-            };
-        }
-        return null;
-    } catch (e) {
-        return null;
-    }
-}, ['movie-seo-cache'], { revalidate: 3600, tags: ['movie-seo'] });
-
 // Helper tính số tập lớn nhất thực tế của server (ví dụ: Tập 1210 -> 1210, không phụ thuộc vào tập gộp hay độ dài mảng)
 function extractMaxEpisodeNumber(server: any): number {
     if (!server?.server_data || !Array.isArray(server.server_data) || server.server_data.length === 0) return 0;

@@ -37,13 +37,14 @@ interface Props {
     searchParams: Promise<{ [key: string]: string | string[] | undefined }>;
 }
 
-import { getMovieDetail, getMovieSeo } from "@/app/utils/movieFetcher";
+import { getMovieDetail } from "@/app/utils/movieFetcher";
 
 import { SITE_URL, getAbsoluteUrl } from "@/app/config/site";
 
 export async function generateMetadata({ params }: Props): Promise<Metadata> {
     const { slug, episodeSlug } = await params;
-    const movie = await getMovieSeo(slug);
+    const detail = await getMovieDetail(slug);
+    const movie = detail?.movie;
 
     if (!movie) {
         return { title: "Xem phim - LoFilm" };
