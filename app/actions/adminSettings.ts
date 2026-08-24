@@ -43,7 +43,6 @@ export async function updateSiteSetting(key: string, value: any) {
         return { error: error.message };
     }
 
-    revalidateTag("site-settings");
     revalidatePath("/", "layout"); // Revalidate all layouts to apply settings
     return { success: true };
 }
