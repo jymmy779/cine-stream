@@ -12,6 +12,7 @@
  *   node scripts/sync-images.mjs --resume                           # Tiếp tục từ checkpoint (per-source)
  *   node scripts/sync-images.mjs --retry-failed                     # Retry ảnh bị lỗi từ lần trước
  *   node scripts/sync-images.mjs --page-concurrency=10              # Fetch 10 trang/lượt mỗi nguồn (default: 5)
+ *   node scripts/sync-images.mjs --public-api-only                  # Bỏ qua SQLite/Backend, test 3 API công cộng
  *
  * Full sync ~56k phim (3 nguồn, nhanh nhất):
  *   node scripts/sync-images.mjs --new-only --movies-only --page-concurrency=10
@@ -82,6 +83,7 @@ const actorsOnly        = args.includes('--actors-only');
 const newOnly           = args.includes('--new-only');
 const retryFailed       = args.includes('--retry-failed');
 const resumeMode        = args.includes('--resume');
+const publicApiOnly     = args.includes('--public-api-only');
 
 const limitArg          = args.find(a => a.startsWith('--limit='));
 const pageArg           = args.find(a => a.startsWith('--page='));
@@ -486,6 +488,10 @@ async function processActorImages(movie) {
 // ─── Fetch danh sách phim từ Database SQLite hoặc API ───────────────────────
 async function fetchAllMovies() {
     // 1. ƯU TIÊN: Đọc trực tiếp từ SQLite Database (Chứa đầy đủ 55.000+ phim của cả 3 nguồn: KKPhim, Ophim, NguonC)
+    if (publicApiOnly) {
+        console.log('[Nguồn dữ liệu] --public-api-only: bỏ qua SQLite và Backend API.');
+    }
+
     try {
         let PrismaClient;
         try {
@@ -500,7 +506,7 @@ async function fetchAllMovies() {
             }
         }
 
-        if (PrismaClient) {
+        if (PrismaClient && !publicApiOnly) {
             console.log('⚡ [Database] Kết nối SQLite Database thành công!');
             const prisma = new PrismaClient();
             const totalInDb = await prisma.movie.count();
@@ -540,7 +546,7 @@ async function fetchAllMovies() {
     const hoursArg = args.find(a => a.startsWith('--hours='));
     const filterHours = hoursArg ? parseInt(hoursArg.split('=')[1]) : (args.includes('--all') ? 0 : 0);
     
-    if (backendApiUrl && !backendApiUrl.includes('127.0.0.1') && !backendApiUrl.includes('localhost')) {
+    if (!publicApiOnly && backendApiUrl && !backendApiUrl.includes('127.0.0.1') && !backendApiUrl.includes('localhost')) {
         console.log(`🌐 [Backend API] Đang lấy danh sách phim từ máy chủ nội bộ: ${backendApiUrl} (Lọc: ${filterHours > 0 ? `${filterHours} giờ qua` : 'Toàn bộ Database'})...`);
         const allMovies = [];
         let page = START_PAGE;
@@ -600,9 +606,12 @@ async function fetchAllMovies() {
     const SOURCES = [
         {
             name: 'KKPhim',
+            timeoutMs: 30000,
+            retries: 3,
+            delayMs: 200,
             getUrl: (p) => `https://phimapi.com/danh-sach/phim-moi-cap-nhat?page=${p}&limit=24`,
             parseItems: (data) => data?.items || data?.data?.items || [],
-            parseTotalPages: (data) => data?.pagination?.totalPages || data?.data?.params?.pagination?.totalPage || 999,
+            parseTotalPages: (data) => data?.pagination?.totalPages || data?.data?.params?.pagination?.totalPage,
             mapMovie: (m) => ({
                 name: m.name,
                 slug: m.slug,
@@ -613,9 +622,12 @@ async function fetchAllMovies() {
         },
         {
             name: 'VSMov',
+            timeoutMs: 30000,
+            retries: 3,
+            delayMs: 200,
             getUrl: (p) => `https://vsmov.com/api/danh-sach/phim-moi-cap-nhat?page=${p}&limit=24`,
             parseItems: (data) => data?.items || data?.data?.items || [],
-            parseTotalPages: (data) => data?.pagination?.totalPages || data?.data?.params?.pagination?.totalPage || 999,
+            parseTotalPages: (data) => data?.pagination?.totalPages || data?.data?.params?.pagination?.totalPage,
             mapMovie: (m) => ({
                 name: m.name,
                 slug: m.slug,
@@ -626,9 +638,13 @@ async function fetchAllMovies() {
         },
         {
             name: 'NguonC',
+            // NguonC thường phản hồi chậm hơn hai nguồn còn lại.
+            timeoutMs: 60000,
+            retries: 5,
+            delayMs: 1000,
             getUrl: (p) => `https://phim.nguonc.com/api/films/phim-moi-cap-nhat?page=${p}`,
             parseItems: (data) => data?.items || data?.data?.items || [],
-            parseTotalPages: (data) => data?.paginate?.total_page || data?.pagination?.totalPages || 999,
+            parseTotalPages: (data) => data?.paginate?.total_page || data?.pagination?.totalPages,
             mapMovie: (m) => ({
                 name: m.name,
                 slug: m.slug,
@@ -641,6 +657,47 @@ async function fetchAllMovies() {
 
     console.log(`[API] Fetch song song 3 nguồn (page-concurrency=${PAGE_CONCURRENCY} trang/lượt)...`);
 
+    const API_HEADERS = {
+        Accept: 'application/json, text/plain, */*',
+        'User-Agent': 'Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 Chrome/140.0.0.0 Safari/537.36',
+    };
+
+    /** Fetch một trang, retry cả timeout, HTTP lỗi và JSON/schema không hợp lệ. */
+    async function fetchSourcePage(source, page) {
+        let lastError;
+
+        for (let attempt = 1; attempt <= source.retries; attempt++) {
+            try {
+                const res = await fetch(source.getUrl(page), {
+                    headers: API_HEADERS,
+                    signal: AbortSignal.timeout(source.timeoutMs),
+                });
+
+                if (!res.ok) {
+                    const body = await res.text().catch(() => '');
+                    throw new Error(`HTTP ${res.status}${body ? `: ${body.slice(0, 160)}` : ''}`);
+                }
+
+                const data = await res.json();
+                const items = source.parseItems(data);
+                if (!Array.isArray(items)) {
+                    throw new Error(`response không có mảng items (status=${data?.status ?? 'unknown'})`);
+                }
+
+                return { data, items: items.map(source.mapMovie) };
+            } catch (err) {
+                lastError = err;
+                if (attempt < source.retries) {
+                    const waitMs = source.delayMs * attempt;
+                    console.warn(`  [${source.name}] Trang ${page} lỗi lần ${attempt}/${source.retries}: ${err.message}. Retry sau ${waitMs}ms...`);
+                    await sleep(waitMs);
+                }
+            }
+        }
+
+        throw new Error(`trang ${page} thất bại sau ${source.retries} lần: ${lastError?.message || 'unknown error'}`);
+    }
+
     /**
      * Fetch tất cả trang từ 1 nguồn với concurrency cao.
      * Thay vì fetch tuần tự (1 trang → chờ → 1 trang), fetch PAGE_CONCURRENCY trang cùng lúc.
@@ -649,25 +706,47 @@ async function fetchAllMovies() {
     async function fetchFromSource(source) {
         const movies = [];
         // Resume per-source nếu có checkpoint
-        const sourceStart = resumeMode && savedState.sources?.[source.name]
+        let sourceStart = resumeMode && savedState.sources?.[source.name]
             ? savedState.sources[source.name]
             : START_PAGE;
 
-        // Bước 1: Lấy tổng số trang từ trang đầu
-        let totalPages = MAX_PAGES_LIMIT;
+        // Bước 1: Luôn đọc metadata từ trang 1 để không tin checkpoint/tổng trang cũ.
+        let metadataPage;
+        let actualTotalPages;
         try {
-            const firstRes = await fetch(source.getUrl(sourceStart), { signal: AbortSignal.timeout(15000) });
-            if (firstRes.ok) {
-                const firstData = await firstRes.json();
-                const items = source.parseItems(firstData);
-                if (items.length) movies.push(...items.map(source.mapMovie));
-                totalPages = Math.min(source.parseTotalPages(firstData), MAX_PAGES_LIMIT);
-                console.log(`  [${source.name}] Tổng: ${totalPages} trang | Bắt đầu từ trang ${sourceStart}`);
+            metadataPage = await fetchSourcePage(source, 1);
+            actualTotalPages = Number(source.parseTotalPages(metadataPage.data));
+            if (!Number.isInteger(actualTotalPages) || actualTotalPages < 1) {
+                throw new Error(`không đọc được tổng số trang từ response: ${JSON.stringify(metadataPage.data).slice(0, 240)}`);
             }
         } catch (err) {
             console.warn(`  [${source.name}] Không lấy được trang đầu: ${err.message}`);
             return movies;
         }
+
+        // Checkpoint lớn hơn tổng trang thường là checkpoint lỗi từ lần quét 9999 cũ.
+        if (sourceStart > actualTotalPages) {
+            console.warn(`  [${source.name}] Checkpoint ${sourceStart} vượt tổng ${actualTotalPages}, quét lại từ trang 1.`);
+            sourceStart = 1;
+        }
+
+        const totalPages = Math.min(actualTotalPages, MAX_PAGES_LIMIT);
+        if (sourceStart > totalPages) {
+            console.log(`  [${source.name}] Không còn trang nào trong phạm vi đã chọn (${sourceStart}-${totalPages}).`);
+            return movies;
+        }
+
+        try {
+            const firstPage = sourceStart === 1
+                ? metadataPage
+                : await fetchSourcePage(source, sourceStart);
+            movies.push(...firstPage.items);
+        } catch (err) {
+            console.warn(`  [${source.name}] Không lấy được trang bắt đầu ${sourceStart}: ${err.message}`);
+            return movies;
+        }
+
+        console.log(`  [${source.name}] Tổng: ${totalPages} trang | Bắt đầu từ trang ${sourceStart} | Trang đầu: ${movies.length} phim`);
 
         // Bước 2: Fetch tất cả trang còn lại với concurrency
         let page = sourceStart + 1;
@@ -678,30 +757,21 @@ async function fetchAllMovies() {
                 batch.push(page + i);
             }
 
-            const results = await Promise.allSettled(
-                batch.map(async (p) => {
-                    for (let attempt = 0; attempt < 3; attempt++) {
-                        try {
-                            const res = await fetch(source.getUrl(p), { signal: AbortSignal.timeout(15000) });
-                            if (res.status === 429) {
-                                await sleep(5000 + attempt * 2000);
-                                continue;
-                            }
-                            if (!res.ok) return [];
-                            const data = await res.json();
-                            return source.parseItems(data).map(source.mapMovie);
-                        } catch {
-                            await sleep(1000 * (attempt + 1));
-                        }
-                    }
-                    return [];
-                })
-            );
+            const results = await Promise.allSettled(batch.map(p => fetchSourcePage(source, p)));
 
             for (const r of results) {
-                if (r.status === 'fulfilled' && r.value.length) {
-                    movies.push(...r.value);
+                if (r.status === 'fulfilled' && r.value.items.length) {
+                    movies.push(...r.value.items);
                 }
+            }
+
+            const firstFailedIndex = results.findIndex(r => r.status === 'rejected');
+            if (firstFailedIndex !== -1) {
+                const failedPage = batch[firstFailedIndex];
+                const reason = results[firstFailedIndex].reason?.message || 'unknown error';
+                saveCheckpoint(failedPage, { [source.name]: failedPage });
+                console.warn(`  [${source.name}] Dừng tại trang ${failedPage} để tránh bỏ sót dữ liệu: ${reason}`);
+                return movies.slice(0, LIMIT === Infinity ? undefined : LIMIT);
             }
 
             page += PAGE_CONCURRENCY;
@@ -712,7 +782,7 @@ async function fetchAllMovies() {
             }
 
             // Delay nhỏ giữa các batch để tránh rate limit
-            await sleep(200);
+            await sleep(source.delayMs);
         }
 
         // Lưu checkpoint hoàn thành cho source này
@@ -794,6 +864,7 @@ async function main() {
     console.log(`  Mode: ${retryFailed ? 'RETRY FAILED LOGS' : actorsOnly ? 'actors-only' : moviesOnly ? 'movies-only' : 'movies + actors'}`);
     console.log(`  New-only: ${newOnly}`);
     console.log(`  Resume: ${resumeMode}`);
+    console.log(`  Public API only: ${publicApiOnly}`);
     console.log(`  Limit: ${LIMIT === Infinity ? 'unlimited' : LIMIT} phim`);
     console.log('═══════════════════════════════════════════════════════\n');
 
