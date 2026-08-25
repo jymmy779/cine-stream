@@ -628,13 +628,18 @@ async function fetchAllMovies() {
             getUrl: (p) => `https://vsmov.com/api/danh-sach/phim-moi-cap-nhat?page=${p}&limit=24`,
             parseItems: (data) => data?.items || data?.data?.items || [],
             parseTotalPages: (data) => data?.pagination?.totalPages || data?.data?.params?.pagination?.totalPage,
-            mapMovie: (m) => ({
-                name: m.name,
-                slug: m.slug,
-                poster_url: m.poster_url,
-                thumb_url: m.thumb_url,
-                tmdb: m.tmdb || { id: '', type: 'movie' },
-            }),
+            mapMovie: (m) => {
+                // VSMov bị ngược: poster_url là ảnh ngang (16:9), thumb_url là ảnh đứng (2:3)
+                const rawPoster = (typeof m.poster_url === 'string' ? m.poster_url : m.poster_url?.url || '').trim();
+                const rawThumb  = (typeof m.thumb_url  === 'string' ? m.thumb_url  : m.thumb_url?.url  || '').trim();
+                return {
+                    name: m.name,
+                    slug: m.slug,
+                    poster_url: rawThumb  || rawPoster,  // ảnh đứng 2:3
+                    thumb_url:  rawPoster || rawThumb,   // ảnh ngang 16:9
+                    tmdb: m.tmdb || { id: '', type: 'movie' },
+                };
+            },
         },
         {
             name: 'NguonC',
@@ -643,15 +648,27 @@ async function fetchAllMovies() {
             retries: 5,
             delayMs: 1000,
             getUrl: (p) => `https://phim.nguonc.com/api/films/phim-moi-cap-nhat?page=${p}`,
+            // NguonC dùng Cloudflare WAF - cần Referer để không bị 403
+            headers: {
+                'Accept': 'application/json, text/plain, */*',
+                'User-Agent': 'Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/124.0.0.0 Safari/537.36',
+                'Referer': 'https://phim.nguonc.com/',
+                'Origin': 'https://phim.nguonc.com',
+            },
             parseItems: (data) => data?.items || data?.data?.items || [],
             parseTotalPages: (data) => data?.paginate?.total_page || data?.pagination?.totalPages,
-            mapMovie: (m) => ({
-                name: m.name,
-                slug: m.slug,
-                poster_url: m.poster_url || m.thumb_url,
-                thumb_url: m.thumb_url || m.poster_url,
-                tmdb: m.tmdb || { id: '', type: 'movie' },
-            }),
+            mapMovie: (m) => {
+                // NguonC bị ngược: thumb_url là ảnh đứng (2:3), poster_url là ảnh ngang (16:9)
+                const rawThumb  = (typeof m.thumb_url  === 'string' ? m.thumb_url  : m.thumb_url?.url  || '').trim();
+                const rawPoster = (typeof m.poster_url === 'string' ? m.poster_url : m.poster_url?.url || '').trim();
+                return {
+                    name: m.name,
+                    slug: m.slug,
+                    poster_url: rawThumb  || rawPoster,  // ảnh đứng 2:3
+                    thumb_url:  rawPoster || rawThumb,   // ảnh ngang 16:9
+                    tmdb: m.tmdb || { id: '', type: 'movie' },
+                };
+            },
         },
     ];
 
@@ -669,7 +686,7 @@ async function fetchAllMovies() {
         for (let attempt = 1; attempt <= source.retries; attempt++) {
             try {
                 const res = await fetch(source.getUrl(page), {
-                    headers: API_HEADERS,
+                    headers: source.headers || API_HEADERS,
                     signal: AbortSignal.timeout(source.timeoutMs),
                 });
 

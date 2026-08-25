@@ -10,7 +10,7 @@ on:
       args:
         description: 'Tham số chạy sync ảnh'
         required: false
-        default: '--public-api-only --new-only --max-pages=15 --page-concurrency=3'
+        default: '--new-only --max-pages=15 --page-concurrency=3'
 
 jobs:
   sync:
@@ -40,6 +40,7 @@ jobs:
           NEXT_PUBLIC_SUPABASE_ANON_KEY: ${{ secrets.NEXT_PUBLIC_SUPABASE_ANON_KEY }}
           BACKEND_API_URL: ${{ secrets.BACKEND_API_URL || 'https://www.munos.store/api/v1' }}
           SYNC_SECRET_KEY: ${{ secrets.SYNC_SECRET_KEY || secrets.SERVER_PASSWORD }}
-        # Chạy tay dùng input; cron quét 15 trang mới nhất của cả 3 API công cộng.
-        # Không dùng --resume để mỗi ngày luôn bắt đầu lại từ trang phim mới nhất.
-        run: node scripts/sync-images.mjs ${{ github.event.inputs.args || '--public-api-only --new-only --max-pages=15 --page-concurrency=3' }}
+        # Chạy tay dùng input; cron quét 15 trang mới nhất qua Backend API (munos.store).
+        # Không dùng --public-api-only: GitHub Actions dùng Azure IP bị NguonC/Cloudflare block.
+        # Backend API trên VPS không bị chặn, trả đủ data cả 3 nguồn (KK + VS + NC).
+        run: node scripts/sync-images.mjs ${{ github.event.inputs.args || '--new-only --max-pages=15 --page-concurrency=3' }}
