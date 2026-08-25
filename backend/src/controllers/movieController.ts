@@ -131,6 +131,7 @@ export async function syncMovieToFts(id: string, name: string, originName: strin
 export async function getMovieDetail(req: Request, res: Response) {
   try {
     const { slug } = req.params;
+    const shouldRecordView = req.get("x-internal-metadata-request") !== "admin-dashboard";
     if (!slug) {
       return res.status(400).json({ status: false, msg: "Thiếu slug phim" });
     }
@@ -139,7 +140,7 @@ export async function getMovieDetail(req: Request, res: Response) {
     const cached = getCached(cacheKey);
     if (cached) {
       // Record view in memory buffer
-      if (cached.movie?._id) recordMovieView(cached.movie._id);
+      if (shouldRecordView && cached.movie?._id) recordMovieView(cached.movie._id);
       return res.json(cached);
     }
 
@@ -163,7 +164,7 @@ export async function getMovieDetail(req: Request, res: Response) {
     }
 
     // Tăng lượt view nhẹ nhàng qua RAM buffer (Không khóa DB)
-    recordMovieView(movie.id);
+    if (shouldRecordView) recordMovieView(movie.id);
 
     // Format theo chuẩn KKPhim response
     const formattedMovie = {

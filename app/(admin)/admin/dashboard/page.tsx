@@ -8,6 +8,18 @@ import { createClient as createSupabaseClient } from "@supabase/supabase-js";
 
 export const dynamic = "force-dynamic";
 
+type DashboardTopView = {
+    id: string;
+    slug: string;
+    view_count: number | null;
+    name: string;
+    thumb_url: string;
+    poster_url: string;
+    year: number | null;
+    quality: string | null;
+    type: string | null;
+};
+
 export default async function AdminPage() {
     const supabase = createSupabaseClient(process.env.NEXT_PUBLIC_SUPABASE_URL!, process.env.SUPABASE_SERVICE_ROLE_KEY!);
 
@@ -19,7 +31,7 @@ export default async function AdminPage() {
         const { count: eCount } = await supabase.from('exclusive_episodes').select('*', { count: 'exact', head: true });
         exclusiveCount = mCount || 0;
         exclusiveEpisodesCount = eCount || 0;
-    } catch (e: any) {
+    } catch (e: unknown) {
         console.error("[Dashboard] Lỗi lấy thống kê Supabase:", e);
     }
 
@@ -33,13 +45,17 @@ export default async function AdminPage() {
     const dbStats = systemStatsRes?.data || null;
 
     // ── Lấy Top Lượt Xem từ Supabase movie_views (nguồn thực tế) ──
-    let supabaseTopViews: any[] = [];
+    let supabaseTopViews: DashboardTopView[] = [];
     try {
-        const { data: topViewsRaw } = await supabase
+        const { data: topViewsRaw, error: topViewsError } = await supabase
             .from('movie_views')
             .select('movie_slug, view_count')
             .order('view_count', { ascending: false })
             .limit(5);
+
+        if (topViewsError) {
+            throw new Error(`Không thể lấy movie_views: ${topViewsError.message}`);
+        }
 
         if (topViewsRaw && topViewsRaw.length > 0) {
             const BACKEND_BASE =
@@ -48,12 +64,15 @@ export default async function AdminPage() {
                 "http://127.0.0.1:5000/api/v1";
 
             // Lấy song song thông tin chi tiết phim từ backend cho mỗi slug
-            const enriched = await Promise.allSettled(
+            supabaseTopViews = await Promise.all(
                 topViewsRaw.map(async (item) => {
                     try {
                         const res = await fetch(`${BACKEND_BASE}/phim/${item.movie_slug}`, {
                             cache: "no-store",
-                            headers: { Accept: "application/json" },
+                            headers: {
+                                Accept: "application/json",
+                                "X-Internal-Metadata-Request": "admin-dashboard",
+                            },
                         });
                         if (res.ok) {
                             const json = await res.json();
@@ -90,11 +109,8 @@ export default async function AdminPage() {
                 })
             );
 
-            supabaseTopViews = enriched
-                .filter((r) => r.status === "fulfilled")
-                .map((r) => (r as PromiseFulfilledResult<any>).value);
         }
-    } catch (e: any) {
+    } catch (e: unknown) {
         console.error("[Dashboard] Lỗi lấy top views từ Supabase:", e);
     }
 
@@ -105,7 +121,7 @@ export default async function AdminPage() {
             ? {
                   ...dbStats,
                   // Ghi đè topViews bằng dữ liệu thực từ Supabase movie_views
-                  topViews: supabaseTopViews.length > 0 ? supabaseTopViews : (dbStats.topViews ?? []),
+                  topViews: supabaseTopViews,
               }
             : null,
     };
