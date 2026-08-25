@@ -2,21 +2,49 @@ name: Sync Images to R2
 
 on:
   schedule:
-    # Chạy vào 20:00 UTC (tương đương 3:00 sáng giờ VN) mỗi ngày
-    - cron: '0 20 * * *'
-  # Cho phép kích hoạt chạy tay bằng nút "Run workflow" trên GitHub
+    # 20:00 UTC = 03:00 giờ Việt Nam. Mặc định đồng bộ 750 phim mới nhất từ DB.
+    - cron: "0 20 * * *"
   workflow_dispatch:
     inputs:
-      args:
-        description: 'Tham số chạy sync ảnh'
-        required: false
-        default: '--new-only --max-pages=15 --page-concurrency=3'
+      mode:
+        description: "Nguồn tạo danh sách phim"
+        required: true
+        default: database-recent
+        type: choice
+        options:
+          - database-recent
+          - database-full
+          - public-apis
+      content:
+        description: "Loại ảnh cần đồng bộ"
+        required: true
+        default: all
+        type: choice
+        options:
+          - all
+          - movies-only
+          - actors-only
+      limit:
+        description: "Số phim DB gần đây (chỉ dùng cho database-recent)"
+        required: true
+        default: "750"
+        type: string
+      max_pages:
+        description: "Số trang mỗi nguồn (chỉ dùng cho public-apis)"
+        required: true
+        default: "15"
+        type: string
+      page_concurrency:
+        description: "Số trang API tải song song"
+        required: true
+        default: "3"
+        type: string
 
 jobs:
   sync:
     runs-on: ubuntu-latest
     timeout-minutes: 360
-    
+
     steps:
       - name: Checkout repository
         uses: actions/checkout@v4
@@ -24,23 +52,119 @@ jobs:
       - name: Setup Node.js
         uses: actions/setup-node@v4
         with:
-          node-version: '20'
-          cache: 'npm'
+          node-version: "22"
+          cache: npm
 
       - name: Install dependencies
         run: npm ci || npm install
 
-      - name: Run Sync Images Script
+      - name: Install SSH password helper
+        run: |
+          if ! command -v sshpass >/dev/null 2>&1; then
+            sudo apt-get update
+            sudo apt-get install -y sshpass
+          fi
+
+      - name: Export movie queue from VPS
+        shell: bash
+        env:
+          SERVER_HOST: ${{ secrets.SERVER_HOST }}
+          SERVER_USER: ${{ secrets.SERVER_USER }}
+          SERVER_PASSWORD: ${{ secrets.SERVER_PASSWORD }}
+          SYNC_MODE: ${{ github.event.inputs.mode || 'database-recent' }}
+          DB_LIMIT: ${{ github.event.inputs.limit || '750' }}
+          MAX_PAGES: ${{ github.event.inputs.max_pages || '15' }}
+          PAGE_CONCURRENCY: ${{ github.event.inputs.page_concurrency || '3' }}
+        run: |
+          set -euo pipefail
+
+          if [[ -z "$SERVER_HOST" || -z "$SERVER_USER" || -z "$SERVER_PASSWORD" ]]; then
+            echo "Thiếu SERVER_HOST, SERVER_USER hoặc SERVER_PASSWORD trong GitHub Secrets."
+            exit 1
+          fi
+          if [[ ! "$DB_LIMIT" =~ ^[1-9][0-9]*$ ]]; then
+            echo "limit phải là số nguyên dương."
+            exit 1
+          fi
+          if [[ ! "$MAX_PAGES" =~ ^[1-9][0-9]*$ ]]; then
+            echo "max_pages phải là số nguyên dương."
+            exit 1
+          fi
+          if [[ ! "$PAGE_CONCURRENCY" =~ ^[1-9][0-9]*$ ]]; then
+            echo "page_concurrency phải là số nguyên dương."
+            exit 1
+          fi
+
+          case "$SYNC_MODE" in
+            database-recent)
+              REMOTE_ARGS="--source=database --limit=$DB_LIMIT"
+              ;;
+            database-full)
+              REMOTE_ARGS="--source=database"
+              ;;
+            public-apis)
+              REMOTE_ARGS="--source=public-apis --max-pages=$MAX_PAGES --page-concurrency=$PAGE_CONCURRENCY"
+              ;;
+            *)
+              echo "Mode không hợp lệ: $SYNC_MODE"
+              exit 1
+              ;;
+          esac
+
+          mkdir -p .sync-input
+          export SSHPASS="$SERVER_PASSWORD"
+          SSH_TARGET="$SERVER_USER@$SERVER_HOST"
+          REMOTE_QUEUE="/tmp/lofilm-image-queue-${GITHUB_RUN_ID}-${GITHUB_RUN_ATTEMPT}.json"
+          SSH_OPTIONS=(-o StrictHostKeyChecking=accept-new -o ServerAliveInterval=30 -o ServerAliveCountMax=10)
+
+          cleanup_remote_queue() {
+            sshpass -e ssh "${SSH_OPTIONS[@]}" "$SSH_TARGET" "rm -f '$REMOTE_QUEUE'" >/dev/null 2>&1 || true
+          }
+          trap cleanup_remote_queue EXIT
+
+          sshpass -e ssh "${SSH_OPTIONS[@]}" "$SSH_TARGET" \
+            "cd /var/www/lofilm && grep -q -- '--export-queue=' scripts/sync-images.mjs" || {
+              echo "VPS chưa có phiên bản sync-images.mjs hỗ trợ export queue. Chờ deploy hoàn tất rồi chạy lại workflow."
+              exit 1
+            }
+
+          sshpass -e ssh "${SSH_OPTIONS[@]}" "$SSH_TARGET" \
+            "cd /var/www/lofilm && node scripts/sync-images.mjs $REMOTE_ARGS --export-queue='$REMOTE_QUEUE'"
+
+          sshpass -e ssh "${SSH_OPTIONS[@]}" "$SSH_TARGET" "cat '$REMOTE_QUEUE'" > .sync-input/movies.json
+
+          node -e "const fs=require('fs'); const q=JSON.parse(fs.readFileSync('.sync-input/movies.json','utf8')); if(!Array.isArray(q.items)) throw new Error('Queue JSON không hợp lệ'); console.log('Queue nhận từ VPS:', q.count, 'phim; source:', q.source);"
+
+      - name: Run image sync on GitHub runner
+        shell: bash
         env:
           R2_ACCOUNT_ID: ${{ secrets.R2_ACCOUNT_ID }}
           R2_ACCESS_KEY_ID: ${{ secrets.R2_ACCESS_KEY_ID }}
           R2_SECRET_ACCESS_KEY: ${{ secrets.R2_SECRET_ACCESS_KEY }}
           R2_BUCKET_NAME: ${{ secrets.R2_BUCKET_NAME }}
-          NEXT_PUBLIC_SUPABASE_URL: ${{ secrets.NEXT_PUBLIC_SUPABASE_URL }}
-          NEXT_PUBLIC_SUPABASE_ANON_KEY: ${{ secrets.NEXT_PUBLIC_SUPABASE_ANON_KEY }}
-          BACKEND_API_URL: ${{ secrets.BACKEND_API_URL || 'https://www.munos.store/api/v1' }}
-          SYNC_SECRET_KEY: ${{ secrets.SYNC_SECRET_KEY || secrets.SERVER_PASSWORD }}
-        # Chạy tay dùng input; cron quét 15 trang mới nhất qua Backend API (munos.store).
-        # Không dùng --public-api-only: GitHub Actions dùng Azure IP bị NguonC/Cloudflare block.
-        # Backend API trên VPS không bị chặn, trả đủ data cả 3 nguồn (KK + VS + NC).
-        run: node scripts/sync-images.mjs ${{ github.event.inputs.args || '--new-only --max-pages=15 --page-concurrency=3' }}
+          SYNC_CONTENT: ${{ github.event.inputs.content || 'all' }}
+          PAGE_CONCURRENCY: ${{ github.event.inputs.page_concurrency || '3' }}
+        run: |
+          set -euo pipefail
+
+          case "$SYNC_CONTENT" in
+            all)
+              CONTENT_ARGS=()
+              ;;
+            movies-only)
+              CONTENT_ARGS=(--movies-only)
+              ;;
+            actors-only)
+              CONTENT_ARGS=(--actors-only)
+              ;;
+            *)
+              echo "Loại nội dung không hợp lệ: $SYNC_CONTENT"
+              exit 1
+              ;;
+          esac
+
+          node scripts/sync-images.mjs \
+            --input-file=.sync-input/movies.json \
+            --new-only \
+            --page-concurrency="$PAGE_CONCURRENCY" \
+            "${CONTENT_ARGS[@]}"

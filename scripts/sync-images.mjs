@@ -13,6 +13,11 @@
  *   node scripts/sync-images.mjs --retry-failed                     # Retry ảnh bị lỗi từ lần trước
  *   node scripts/sync-images.mjs --page-concurrency=10              # Fetch 10 trang/lượt mỗi nguồn (default: 5)
  *   node scripts/sync-images.mjs --public-api-only                  # Bỏ qua SQLite/Backend, test 3 API công cộng
+ *   node scripts/sync-images.mjs --source=database                  # Bắt buộc lấy danh sách từ SQLite
+ *   node scripts/sync-images.mjs --source=public-apis               # Bắt buộc lấy danh sách từ 3 API công cộng
+ *   node scripts/sync-images.mjs --export-queue=/tmp/movies.json    # Chỉ xuất queue JSON, không xử lý ảnh/R2
+ *   node scripts/sync-images.mjs --input-file=movies.json           # Xử lý queue JSON đã xuất
+ *   node scripts/sync-images.mjs --input-file=movies.json --dry-run # Kiểm tra queue, không gọi R2
  *
  * Full sync ~56k phim (3 nguồn, nhanh nhất):
  *   node scripts/sync-images.mjs --new-only --movies-only --page-concurrency=10
@@ -35,6 +40,9 @@ import { fileURLToPath } from 'url';
 // ─── Load .env.local ───────────────────────────────────────────────────────────
 const __dirname = dirname(fileURLToPath(import.meta.url));
 const envPath = resolve(__dirname, '../.env.local');
+const rawArgs = process.argv.slice(2);
+const queueExportRequested = rawArgs.some(a => a.startsWith('--export-queue='));
+const dryRunRequested = rawArgs.includes('--dry-run');
 
 try {
     const envContent = readFileSync(envPath, 'utf8');
@@ -61,29 +69,43 @@ const R2_SECRET_ACCESS_KEY = process.env.R2_SECRET_ACCESS_KEY;
 const R2_BUCKET_NAME     = process.env.R2_BUCKET_NAME || 'lofilm';
 
 const SUPABASE_URL = process.env.NEXT_PUBLIC_SUPABASE_URL;
-const SUPABASE_ANON_KEY = process.env.NEXT_PUBLIC_SUPABASE_ANON_KEY;
+const SUPABASE_KEY = process.env.SUPABASE_SERVICE_ROLE_KEY || process.env.NEXT_PUBLIC_SUPABASE_ANON_KEY;
 
-if (!R2_ACCOUNT_ID || !R2_ACCESS_KEY_ID || !R2_SECRET_ACCESS_KEY) {
+if (!queueExportRequested && !dryRunRequested && (!R2_ACCOUNT_ID || !R2_ACCESS_KEY_ID || !R2_SECRET_ACCESS_KEY)) {
     console.error('[ERROR] Thiếu R2 credentials. Kiểm tra .env.local');
     process.exit(1);
 }
 
 // ─── Khởi tạo Supabase ─────────────────────────────────────────────────────────
 let supabase = null;
-if (SUPABASE_URL && SUPABASE_ANON_KEY) {
-    supabase = createClient(SUPABASE_URL, SUPABASE_ANON_KEY);
+if (SUPABASE_URL && SUPABASE_KEY) {
+    supabase = createClient(SUPABASE_URL, SUPABASE_KEY);
 } else {
-    console.warn('[WARN] Thiếu cấu hình Supabase (NEXT_PUBLIC_SUPABASE_URL, NEXT_PUBLIC_SUPABASE_ANON_KEY). Bỏ qua tính năng cào phim độc quyền.');
+    console.warn('[WARN] Thiếu cấu hình Supabase. Bỏ qua tính năng cào phim độc quyền.');
 }
 
 // ─── Parse CLI args ────────────────────────────────────────────────────────────
-const args = process.argv.slice(2);
+const args = rawArgs;
 const moviesOnly        = args.includes('--movies-only');
 const actorsOnly        = args.includes('--actors-only');
 const newOnly           = args.includes('--new-only');
 const retryFailed       = args.includes('--retry-failed');
 const resumeMode        = args.includes('--resume');
-const publicApiOnly     = args.includes('--public-api-only');
+const dryRun            = args.includes('--dry-run');
+
+const sourceArg         = args.find(a => a.startsWith('--source='));
+const sourceMode        = sourceArg ? sourceArg.split('=')[1] : 'auto';
+if (!['auto', 'database', 'public-apis'].includes(sourceMode)) {
+    console.error(`[ERROR] --source không hợp lệ: ${sourceMode}. Dùng auto, database hoặc public-apis.`);
+    process.exit(1);
+}
+
+const inputFileArg      = args.find(a => a.startsWith('--input-file='));
+const inputFilePath     = inputFileArg ? resolve(process.cwd(), inputFileArg.slice('--input-file='.length)) : null;
+const exportQueueArg    = args.find(a => a.startsWith('--export-queue='));
+const exportQueuePath   = exportQueueArg ? resolve(process.cwd(), exportQueueArg.slice('--export-queue='.length)) : null;
+const publicApiOnly     = args.includes('--public-api-only') || sourceMode === 'public-apis';
+const databaseOnly      = sourceMode === 'database';
 
 const limitArg          = args.find(a => a.startsWith('--limit='));
 const pageArg           = args.find(a => a.startsWith('--page='));
@@ -130,19 +152,22 @@ let tmdbKeyIndex = 0;
 const getTmdbKey = () => TMDB_KEYS[tmdbKeyIndex++ % TMDB_KEYS.length];
 
 // ─── R2 Client ─────────────────────────────────────────────────────────────────
-const s3 = new S3Client({
-    region: 'auto',
-    endpoint: `https://${R2_ACCOUNT_ID}.r2.cloudflarestorage.com`,
-    credentials: {
-        accessKeyId: R2_ACCESS_KEY_ID,
-        secretAccessKey: R2_SECRET_ACCESS_KEY,
-    },
-});
+const s3 = queueExportRequested || dryRunRequested
+    ? null
+    : new S3Client({
+        region: 'auto',
+        endpoint: `https://${R2_ACCOUNT_ID}.r2.cloudflarestorage.com`,
+        credentials: {
+            accessKeyId: R2_ACCESS_KEY_ID,
+            secretAccessKey: R2_SECRET_ACCESS_KEY,
+        },
+    });
 
 // ─── Helpers ───────────────────────────────────────────────────────────────────
 
 /** Kiểm tra file đã có trên R2 chưa */
 async function existsOnR2(key) {
+    if (!s3) throw new Error('R2 client chưa được khởi tạo');
     try {
         const res = await s3.send(new HeadObjectCommand({ Bucket: R2_BUCKET_NAME, Key: key }));
         // Đảm bảo file tồn tại VÀ kích thước > 1KB (nếu 0-byte hoặc bị lỗi sẽ tự động tải lại)
@@ -189,6 +214,7 @@ function isValidImageBuffer(buf) {
 
 /** Convert buffer → WebP rồi upload lên R2 */
 async function convertAndUpload(srcBuffer, r2Key, width, quality = 80) {
+    if (!s3) throw new Error('R2 client chưa được khởi tạo');
     if (!isValidImageBuffer(srcBuffer)) {
         throw new Error('Dữ liệu tải về không phải là file ảnh (HTML/Corrupt content)');
     }
@@ -487,6 +513,23 @@ async function processActorImages(movie) {
 
 // ─── Fetch danh sách phim từ Database SQLite hoặc API ───────────────────────
 async function fetchAllMovies() {
+    if (inputFilePath) {
+        if (!existsSync(inputFilePath)) {
+            throw new Error(`Không tìm thấy queue input: ${inputFilePath}`);
+        }
+
+        const parsed = JSON.parse(readFileSync(inputFilePath, 'utf8'));
+        const inputItems = Array.isArray(parsed) ? parsed : parsed?.items;
+        if (!Array.isArray(inputItems)) {
+            throw new Error('Queue input không hợp lệ: cần JSON array hoặc object có trường items.');
+        }
+
+        const validItems = inputItems.filter(item => item && typeof item.slug === 'string' && item.slug.trim());
+        const limitedItems = LIMIT === Infinity ? validItems : validItems.slice(0, LIMIT);
+        console.log(`📦 [Queue Input] Đã tải ${limitedItems.length}/${validItems.length} phim từ ${inputFilePath}`);
+        return limitedItems;
+    }
+
     // 1. ƯU TIÊN: Đọc trực tiếp từ SQLite Database (Chứa đầy đủ 55.000+ phim của cả 3 nguồn: KKPhim, Ophim, NguonC)
     if (publicApiOnly) {
         console.log('[Nguồn dữ liệu] --public-api-only: bỏ qua SQLite và Backend API.');
@@ -538,6 +581,13 @@ async function fetchAllMovies() {
         }
     } catch (dbErr) {
         console.warn('⚠️ [Database] Không thể đọc trực tiếp từ DB, chuyển sang quét API:', dbErr.message);
+        if (databaseOnly) {
+            throw new Error(`Không thể xuất queue từ Database: ${dbErr.message}`);
+        }
+    }
+
+    if (databaseOnly) {
+        throw new Error('Không tìm thấy Prisma Client để đọc SQLite Database.');
     }
 
     // 2. DỰ PHÒNG 1: Fetch từ Backend API riêng (Nếu có cấu hình BACKEND_API_URL)
@@ -882,6 +932,9 @@ async function main() {
     console.log(`  New-only: ${newOnly}`);
     console.log(`  Resume: ${resumeMode}`);
     console.log(`  Public API only: ${publicApiOnly}`);
+    console.log(`  Source: ${inputFilePath ? 'queue-file' : sourceMode}`);
+    console.log(`  Export queue: ${exportQueuePath || 'false'}`);
+    console.log(`  Dry-run: ${dryRun}`);
     console.log(`  Limit: ${LIMIT === Infinity ? 'unlimited' : LIMIT} phim`);
     console.log('═══════════════════════════════════════════════════════\n');
 
@@ -925,7 +978,7 @@ async function main() {
         }
     }
 
-    const exclusiveMovies = await fetchExclusiveMovies();
+    const exclusiveMovies = inputFilePath ? [] : await fetchExclusiveMovies();
     const phimApiMovies = await fetchAllMovies();
     
     // Merge exclusive movies FIRST so they get prioritized/synced first, then PhimAPI movies.
@@ -938,6 +991,25 @@ async function main() {
         mergedMoviesMap.set(m.slug, m); // Overwrite with exclusive if duplicate
     }
     const movies = Array.from(mergedMoviesMap.values());
+
+    if (exportQueuePath) {
+        const queuePayload = {
+            version: 1,
+            generated_at: new Date().toISOString(),
+            source: sourceMode,
+            count: movies.length,
+            items: movies,
+        };
+        writeFileSync(exportQueuePath, JSON.stringify(queuePayload));
+        console.log(`\n✅ [Queue Export] Đã ghi ${movies.length} phim vào ${exportQueuePath}`);
+        return;
+    }
+
+    if (dryRun) {
+        console.log(`\n✅ [Dry Run] Queue hợp lệ với ${movies.length} phim. Không gọi R2 hoặc tải ảnh.`);
+        console.log(`[Dry Run] Mẫu slug: ${movies.slice(0, 3).map(movie => movie.slug).join(', ') || '(trống)'}`);
+        return;
+    }
 
     stats.movies.total = movies.length * 2; // poster + thumb
 
