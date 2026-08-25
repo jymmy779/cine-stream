@@ -32,10 +32,82 @@ export default async function AdminPage() {
     const starredMovies = starredRes.data || [];
     const dbStats = systemStatsRes?.data || null;
 
+    // ── Lấy Top Lượt Xem từ Supabase movie_views (nguồn thực tế) ──
+    let supabaseTopViews: any[] = [];
+    try {
+        const { data: topViewsRaw } = await supabase
+            .from('movie_views')
+            .select('movie_slug, view_count')
+            .order('view_count', { ascending: false })
+            .limit(5);
+
+        if (topViewsRaw && topViewsRaw.length > 0) {
+            const BACKEND_BASE =
+                process.env.INTERNAL_API_URL ||
+                process.env.NEXT_PUBLIC_INTERNAL_API_URL ||
+                "http://127.0.0.1:5000/api/v1";
+
+            // Lấy song song thông tin chi tiết phim từ backend cho mỗi slug
+            const enriched = await Promise.allSettled(
+                topViewsRaw.map(async (item) => {
+                    try {
+                        const res = await fetch(`${BACKEND_BASE}/phim/${item.movie_slug}`, {
+                            cache: "no-store",
+                            headers: { Accept: "application/json" },
+                        });
+                        if (res.ok) {
+                            const json = await res.json();
+                            const movie = json?.movie || null;
+                            if (movie) {
+                                return {
+                                    id: movie._id || movie.id || item.movie_slug,
+                                    slug: item.movie_slug,
+                                    view_count: item.view_count,
+                                    name: movie.name || movie.origin_name || item.movie_slug,
+                                    thumb_url: movie.thumb_url || movie.poster_url || "",
+                                    poster_url: movie.poster_url || movie.thumb_url || "",
+                                    year: movie.year || null,
+                                    quality: movie.quality || null,
+                                    type: movie.type || null,
+                                };
+                            }
+                        }
+                    } catch {
+                        // bỏ qua nếu backend không phản hồi
+                    }
+                    // Fallback: chỉ có slug + view_count, không có ảnh
+                    return {
+                        id: item.movie_slug,
+                        slug: item.movie_slug,
+                        view_count: item.view_count,
+                        name: item.movie_slug,
+                        thumb_url: "",
+                        poster_url: "",
+                        year: null,
+                        quality: null,
+                        type: null,
+                    };
+                })
+            );
+
+            supabaseTopViews = enriched
+                .filter((r) => r.status === "fulfilled")
+                .map((r) => (r as PromiseFulfilledResult<any>).value);
+        }
+    } catch (e: any) {
+        console.error("[Dashboard] Lỗi lấy top views từ Supabase:", e);
+    }
+
     const stats = {
         exclusiveMoviesCount: exclusiveCount,
         exclusiveEpisodesCount: exclusiveEpisodesCount,
-        dbStats: dbStats,
+        dbStats: dbStats
+            ? {
+                  ...dbStats,
+                  // Ghi đè topViews bằng dữ liệu thực từ Supabase movie_views
+                  topViews: supabaseTopViews.length > 0 ? supabaseTopViews : (dbStats.topViews ?? []),
+              }
+            : null,
     };
 
     return (

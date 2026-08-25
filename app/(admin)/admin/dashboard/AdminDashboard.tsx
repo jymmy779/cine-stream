@@ -1,5 +1,5 @@
 "use client";
-import { useState, useTransition, useEffect } from "react";
+import { useState, useTransition, useEffect, useCallback, useRef } from "react";
 import { deleteExclusiveMovie } from "@/app/actions/adminMovies";
 import { updateSiteSetting } from "@/app/actions/adminSettings";
 import Link from "next/link";
@@ -51,6 +51,41 @@ export default function AdminDashboard({ initialStats, initialSettings, initialS
         setHasChanges(false);
     }, [initialSettings]);
 
+    // Poll /api/admin/stats mỗi 30 giây để tự động cập nhật "Phim Vừa Nạp"
+    const isPollingRef = useRef(false);
+    const loadDbStats = useCallback(async () => {
+        if (isPollingRef.current) return; // Tránh overlapping request
+        isPollingRef.current = true;
+        try {
+            const res = await fetch("/api/admin/stats", {
+                cache: "no-store",
+                headers: { "Cache-Control": "no-cache" },
+            });
+            if (!res.ok) return;
+            const json = await res.json();
+            if (json?.data) {
+                setStats((prev) => ({
+                    ...prev,
+                    dbStats: json.data,
+                }));
+            }
+        } catch {
+            // Bỏ qua lỗi mạng tạm thời
+        } finally {
+            isPollingRef.current = false;
+        }
+    }, []);
+
+    useEffect(() => {
+        // Delay lần đầu 5 giây để không tranh với SSR data
+        const firstTimer = setTimeout(() => loadDbStats(), 5000);
+        const interval = setInterval(() => loadDbStats(), 30000);
+        return () => {
+            clearTimeout(firstTimer);
+            clearInterval(interval);
+        };
+    }, [loadDbStats]);
+
     const handleChangeSetting = (key: string, value: any) => {
         setSettings({ ...settings, [key]: value });
         setHasChanges(true);
@@ -76,14 +111,14 @@ export default function AdminDashboard({ initialStats, initialSettings, initialS
         startTransition(async () => {
             const keysToSave = Object.keys(settings);
             let hasError = false;
-            
+
             for (const key of keysToSave) {
                 if (settings[key] !== initialSettings[key]) {
                     const res = await updateSiteSetting(key, settings[key]);
                     if (res?.error) hasError = true;
                 }
             }
-            
+
             if (hasError) {
                 toast.error("Có lỗi xảy ra khi lưu một số cài đặt!");
             } else {
@@ -108,37 +143,37 @@ export default function AdminDashboard({ initialStats, initialSettings, initialS
         <div>
             {/* Tabs */}
             <div className="flex flex-wrap gap-4 mb-6 border-b border-white/10 pb-2">
-                <button 
+                <button
                     onClick={() => setActiveTab("stats")}
                     className={`pb-2 px-2 font-medium transition ${activeTab === 'stats' ? 'text-[#D497FF] border-b-2 border-[#D497FF]' : 'text-gray-400 hover:text-white'}`}
                 >
                     <i className="fa-solid fa-chart-pie mr-2"></i> Tổng quan
                 </button>
-                <button 
+                <button
                     onClick={() => setActiveTab("sync")}
                     className={`pb-2 px-2 font-medium transition ${activeTab === 'sync' ? 'text-[#D497FF] border-b-2 border-[#D497FF]' : 'text-gray-400 hover:text-white'}`}
                 >
                     <i className="fa-solid fa-rotate mr-2"></i> Cào Phim & Đồng Bộ
                 </button>
-                <button 
+                <button
                     onClick={() => setActiveTab("settings")}
                     className={`pb-2 px-2 font-medium transition ${activeTab === 'settings' ? 'text-[#D497FF] border-b-2 border-[#D497FF]' : 'text-gray-400 hover:text-white'}`}
                 >
                     <i className="fa-solid fa-cog mr-2"></i> Cấu hình Website
                 </button>
-                <button 
+                <button
                     onClick={() => setActiveTab("hero")}
                     className={`pb-2 px-2 font-medium transition ${activeTab === 'hero' ? 'text-[#D497FF] border-b-2 border-[#D497FF]' : 'text-gray-400 hover:text-white'}`}
                 >
                     <i className="fa-solid fa-star mr-2"></i> Hero Slider
                 </button>
-                <button 
+                <button
                     onClick={() => setActiveTab("editor")}
                     className={`pb-2 px-2 font-medium transition ${activeTab === 'editor' ? 'text-[#D497FF] border-b-2 border-[#D497FF]' : 'text-gray-400 hover:text-white'}`}
                 >
                     <i className="fa-solid fa-award mr-2"></i> Editor's Choices
                 </button>
-                <button 
+                <button
                     onClick={() => setActiveTab("topics")}
                     className={`pb-2 px-2 font-medium transition ${activeTab === 'topics' ? 'text-[#D497FF] border-b-2 border-[#D497FF]' : 'text-gray-400 hover:text-white'}`}
                 >
@@ -214,7 +249,7 @@ export default function AdminDashboard({ initialStats, initialSettings, initialS
                                 <span className="text-[11px] px-2 py-0.5 rounded-md bg-cyan-500/15 text-cyan-300 font-semibold">
                                     {db?.totalServers ? `${db.totalServers.toLocaleString('vi-VN')} Servers` : 'Đa luồng'}
                                 </span>
-                                <span className="text-[11px] text-white/40">Hỗ trợ Vietsub & LT</span>
+                                <span className="text-[11px] text-white/40">Hỗ trợ Vietsub, LT & TM</span>
                             </div>
                         </div>
 
@@ -329,7 +364,7 @@ export default function AdminDashboard({ initialStats, initialSettings, initialS
                                     <span className="w-1.5 h-4 bg-blue-400 rounded-full"></span>
                                     Phim Vừa Nạp & Cập Nhật Gần Nhất
                                 </h3>
-                                <button 
+                                <button
                                     onClick={() => setActiveTab("sync")}
                                     className="text-xs text-[#D497FF] hover:underline flex items-center gap-1 font-medium"
                                 >
@@ -352,9 +387,9 @@ export default function AdminDashboard({ initialStats, initialSettings, initialS
                                                     )}
                                                 </div>
                                                 <div className="min-w-0">
-                                                    <a 
-                                                        href={`/phim/${m.slug}`} 
-                                                        target="_blank" 
+                                                    <a
+                                                        href={`/phim/${m.slug}`}
+                                                        target="_blank"
                                                         rel="noreferrer"
                                                         className="text-sm font-bold text-white hover:text-[#D497FF] transition truncate block"
                                                     >
@@ -377,11 +412,11 @@ export default function AdminDashboard({ initialStats, initialSettings, initialS
 
                                             <div className="text-right shrink-0">
                                                 <span className="text-[11px] text-white/30 block">
-                                                    {m.updated_at ? new Date(m.updated_at).toLocaleDateString('vi-VN', { hour: '2-digit', minute: '2-digit' }) : 'Vừa xong'}
+                                                    {m.updated_at ? new Date(m.updated_at).toLocaleString('vi-VN', { day: '2-digit', month: '2-digit', hour: '2-digit', minute: '2-digit' }) : 'Vừa xong'}
                                                 </span>
-                                                <a 
-                                                    href={`/phim/${m.slug}`} 
-                                                    target="_blank" 
+                                                <a
+                                                    href={`/phim/${m.slug}`}
+                                                    target="_blank"
                                                     rel="noreferrer"
                                                     className="inline-block mt-1 text-[11px] text-blue-400 hover:text-blue-300 font-medium"
                                                 >
@@ -442,7 +477,7 @@ export default function AdminDashboard({ initialStats, initialSettings, initialS
                             <div className="bg-[#0F1115] border border-white/10 rounded-2xl p-5">
                                 <h4 className="text-xs font-bold text-white/60 uppercase tracking-wider mb-3">Thao tác nhanh</h4>
                                 <div className="space-y-2">
-                                    <button 
+                                    <button
                                         onClick={handleClearSystemCache}
                                         disabled={isClearingCache}
                                         className="w-full py-2.5 px-3 rounded-xl bg-white/5 hover:bg-white/10 text-white/80 hover:text-white text-xs font-semibold transition flex items-center justify-between border border-white/5"
@@ -452,8 +487,8 @@ export default function AdminDashboard({ initialStats, initialSettings, initialS
                                         </span>
                                         {isClearingCache ? <i className="fa-solid fa-spinner fa-spin"></i> : <i className="fa-solid fa-arrow-right text-[10px] opacity-40"></i>}
                                     </button>
-                                    <Link 
-                                        href="/admin/movies" 
+                                    <Link
+                                        href="/admin/movies"
                                         className="w-full py-2.5 px-3 rounded-xl bg-white/5 hover:bg-white/10 text-white/80 hover:text-white text-xs font-semibold transition flex items-center justify-between border border-white/5"
                                     >
                                         <span className="flex items-center gap-2">
@@ -499,13 +534,13 @@ export default function AdminDashboard({ initialStats, initialSettings, initialS
                             </button>
                         )}
                     </div>
-                    
+
                     <div className="mb-6 flex items-center justify-between p-4 bg-[#0F1115] rounded-lg">
                         <div>
                             <div className="font-medium text-lg">Chế độ Bảo trì</div>
                             <div className="text-sm text-gray-400">Đóng website tạm thời, chuyển tất cả traffic về trang /maintenance</div>
                         </div>
-                        <button 
+                        <button
                             disabled={isPending}
                             onClick={() => handleChangeSetting('maintenance_mode', !settings.maintenance_mode)}
                             className={`w-14 h-7 rounded-full transition-colors relative ${settings.maintenance_mode ? 'bg-red-500' : 'bg-gray-600'}`}
@@ -519,7 +554,7 @@ export default function AdminDashboard({ initialStats, initialSettings, initialS
                             <div className="font-medium text-lg">Sự kiện Đặc biệt (Hiệu ứng)</div>
                             <div className="text-sm text-gray-400">Kích hoạt các hiệu ứng đặc biệt trên toàn trang web.</div>
                         </div>
-                        <select 
+                        <select
                             value={settings.active_event || 'none'}
                             onChange={(e) => handleChangeSetting('active_event', e.target.value)}
                             disabled={isPending}
@@ -531,7 +566,7 @@ export default function AdminDashboard({ initialStats, initialSettings, initialS
                     </div>
 
                     <h3 className="text-xl mb-6 font-semibold border-t border-white/10 pt-6">Thông tin liên hệ & Mạng xã hội</h3>
-                    
+
                     <div className="space-y-4">
                         {[
                             { key: 'contact_telegram', label: 'Telegram URL', icon: 'fa-telegram', color: 'text-[#0088cc]' },

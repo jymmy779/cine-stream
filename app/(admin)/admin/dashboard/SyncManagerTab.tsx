@@ -3,7 +3,6 @@
 import React, { useState, useEffect, useRef, useTransition, useCallback } from "react";
 import toast from "react-hot-toast";
 import {
-  fetchSyncStatus,
   triggerInstantSyncAction,
   toggleCronAction,
   startBulkSyncAction,
@@ -91,9 +90,18 @@ export default function SyncManagerTab() {
   };
 
   const loadStatus = useCallback(async () => {
-    const res = await fetchSyncStatus();
-    if (res.data) {
-      setStatusData(res.data);
+    try {
+      const res = await fetch("/api/admin/sync/status", {
+        cache: "no-store",
+        headers: { "Cache-Control": "no-cache" },
+      });
+      if (!res.ok) return;
+      const json = await res.json();
+      if (json?.data) {
+        setStatusData(json.data);
+      }
+    } catch {
+      // Bỏ qua lỗi mạng tạm thời khi polling
     }
   }, []);
 

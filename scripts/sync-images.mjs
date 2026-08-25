@@ -3,13 +3,21 @@
  * sync-images.mjs – Tải ảnh phim & diễn viên về Cloudflare R2 (JPG → WebP)
  *
  * Cách dùng:
- *   node scripts/sync-images.mjs                             # Sync toàn bộ (phim + diễn viên)
- *   node scripts/sync-images.mjs --movies-only                # Chỉ sync ảnh phim
- *   node scripts/sync-images.mjs --actors-only                # Chỉ sync ảnh diễn viên
- *   node scripts/sync-images.mjs --new-only                   # Chỉ sync phim chưa có trên R2 (>1KB)
- *   node scripts/sync-images.mjs --start-page=1 --max-pages=15 # Quét theo khoảng trang chỉ định
- *   node scripts/sync-images.mjs --resume                     # Khôi phục chạy tiếp từ trang dừng trước đó
- *   node scripts/sync-images.mjs --retry-failed               # Sửa 100% các ảnh bị lỗi từ lần chạy trước
+ *   node scripts/sync-images.mjs                                    # Sync toàn bộ (phim + diễn viên)
+ *   node scripts/sync-images.mjs --new-only                         # Chỉ upload ảnh chưa có trên R2
+ *   node scripts/sync-images.mjs --movies-only                      # Chỉ sync ảnh phim
+ *   node scripts/sync-images.mjs --actors-only                      # Chỉ sync ảnh diễn viên
+ *   node scripts/sync-images.mjs --max-pages=15                     # Giới hạn 15 trang mỗi nguồn
+ *   node scripts/sync-images.mjs --start-page=1 --max-pages=15      # Quét theo khoảng trang
+ *   node scripts/sync-images.mjs --resume                           # Tiếp tục từ checkpoint (per-source)
+ *   node scripts/sync-images.mjs --retry-failed                     # Retry ảnh bị lỗi từ lần trước
+ *   node scripts/sync-images.mjs --page-concurrency=10              # Fetch 10 trang/lượt mỗi nguồn (default: 5)
+ *
+ * Full sync ~56k phim (3 nguồn, nhanh nhất):
+ *   node scripts/sync-images.mjs --new-only --movies-only --page-concurrency=10
+ *
+ * Resume nếu bị ngắt giữa chừng:
+ *   node scripts/sync-images.mjs --new-only --movies-only --page-concurrency=10 --resume
  *
  * Yêu cầu env vars (copy từ .env.local):
  *   R2_ACCOUNT_ID, R2_ACCESS_KEY_ID, R2_SECRET_ACCESS_KEY, R2_BUCKET_NAME
@@ -69,34 +77,41 @@ if (SUPABASE_URL && SUPABASE_ANON_KEY) {
 
 // ─── Parse CLI args ────────────────────────────────────────────────────────────
 const args = process.argv.slice(2);
-const moviesOnly   = args.includes('--movies-only');
-const actorsOnly   = args.includes('--actors-only');
-const newOnly      = args.includes('--new-only');
-const retryFailed  = args.includes('--retry-failed');
-const resumeMode   = args.includes('--resume');
+const moviesOnly        = args.includes('--movies-only');
+const actorsOnly        = args.includes('--actors-only');
+const newOnly           = args.includes('--new-only');
+const retryFailed       = args.includes('--retry-failed');
+const resumeMode        = args.includes('--resume');
 
-const limitArg     = args.find(a => a.startsWith('--limit='));
-const pageArg      = args.find(a => a.startsWith('--page='));
-const maxPagesArg  = args.find(a => a.startsWith('--max-pages='));
-const startPageArg = args.find(a => a.startsWith('--start-page='));
+const limitArg          = args.find(a => a.startsWith('--limit='));
+const pageArg           = args.find(a => a.startsWith('--page='));
+const maxPagesArg       = args.find(a => a.startsWith('--max-pages='));
+const startPageArg      = args.find(a => a.startsWith('--start-page='));
+const pageConcurrencyArg = args.find(a => a.startsWith('--page-concurrency='));
 
 // File Checkpoint & Failed Logs
 const STATE_FILE  = resolve(__dirname, 'sync-state.json');
 const FAILED_FILE = resolve(__dirname, 'failed-images.json');
 
-// Đọc checkpoint cũ nếu có cờ --resume
-let savedState = { lastPage: 1 };
+// Đọc checkpoint cũ nếu có cờ --resume (hỗ trợ per-source resume)
+let savedState = { lastPage: 1, sources: {} };
 if (resumeMode && existsSync(STATE_FILE)) {
     try {
         savedState = JSON.parse(readFileSync(STATE_FILE, 'utf8'));
-        console.log(`[Checkpoint] Khôi phục từ trang gần nhất: Page ${savedState.lastPage}`);
+        if (!savedState.sources) savedState.sources = {};
+        console.log('[Checkpoint] Khôi phục tiến trình:');
+        for (const [src, pg] of Object.entries(savedState.sources)) {
+            console.log(`  - ${src}: tiếp tục từ trang ${pg}`);
+        }
     } catch {}
 }
 
-const LIMIT            = limitArg ? parseInt(limitArg.split('=')[1]) : Infinity;
-const SINGLE_PAGE      = pageArg ? parseInt(pageArg.split('=')[1]) : null;
-const START_PAGE       = startPageArg ? parseInt(startPageArg.split('=')[1]) : (resumeMode ? savedState.lastPage : (SINGLE_PAGE || 1));
-const MAX_PAGES_LIMIT  = maxPagesArg ? parseInt(maxPagesArg.split('=')[1]) : (SINGLE_PAGE ? SINGLE_PAGE : 9999);
+const LIMIT             = limitArg ? parseInt(limitArg.split('=')[1]) : Infinity;
+const SINGLE_PAGE       = pageArg ? parseInt(pageArg.split('=')[1]) : null;
+const START_PAGE        = startPageArg ? parseInt(startPageArg.split('=')[1]) : (resumeMode ? (savedState.lastPage || 1) : (SINGLE_PAGE || 1));
+const MAX_PAGES_LIMIT   = maxPagesArg ? parseInt(maxPagesArg.split('=')[1]) : (SINGLE_PAGE ? SINGLE_PAGE : 9999);
+// Số trang fetch song song trong 1 nguồn (tăng để tăng tốc full sync, mặc định 5)
+const PAGE_CONCURRENCY  = pageConcurrencyArg ? parseInt(pageConcurrencyArg.split('=')[1]) : 5;
 
 // ─── TMDB keys (round-robin để tránh rate limit) ───────────────────────────────
 const TMDB_KEYS = [
@@ -274,6 +289,7 @@ const stats = {
     movies:  { total: 0, uploaded: 0, skipped: 0, failed: 0 },
     actors:  { total: 0, uploaded: 0, skipped: 0, failed: 0 },
 };
+let syncStartTime = Date.now();
 
 const failedItems = [];
 
@@ -284,10 +300,28 @@ function saveFailedLog(item) {
     } catch {}
 }
 
-function saveCheckpoint(page) {
+function saveCheckpoint(page, sourceProgress = {}) {
     try {
-        writeFileSync(STATE_FILE, JSON.stringify({ lastPage: page, updatedAt: new Date().toISOString() }, null, 2));
+        const state = existsSync(STATE_FILE) ? JSON.parse(readFileSync(STATE_FILE, 'utf8')) : {};
+        const merged = {
+            ...state,
+            lastPage: page,
+            sources: { ...(state.sources || {}), ...sourceProgress },
+            updatedAt: new Date().toISOString(),
+        };
+        writeFileSync(STATE_FILE, JSON.stringify(merged, null, 2));
     } catch {}
+}
+
+/** Ước tính thời gian còn lại dựa trên tốc độ hiện tại */
+function etaString(done, total) {
+    if (done <= 0) return '...';
+    const elapsed = (Date.now() - syncStartTime) / 1000;
+    const rate = done / elapsed; // items/s
+    const remaining = (total - done) / rate;
+    if (remaining < 60) return `${Math.round(remaining)}s`;
+    if (remaining < 3600) return `${Math.round(remaining / 60)}m`;
+    return `${(remaining / 3600).toFixed(1)}h`;
 }
 
 // ─── Process 1 phim: poster + thumb ───────────────────────────────────────────
@@ -349,8 +383,9 @@ async function processMovieImages(movie, idx, total) {
         const pct = Math.round((idx / total) * 100);
         const pIcon = posterDone ? '✓' : '✗';
         const tIcon = thumbDone  ? '✓' : '✗';
-        const displaySlug = slug ? slug.slice(0, 30).padEnd(30) : 'unknown';
-        process.stdout.write(`\r[${idx}/${total}] ${pct}% | poster${pIcon} thumb${tIcon} | ${displaySlug}`);
+        const displaySlug = slug ? slug.slice(0, 28).padEnd(28) : 'unknown';
+        const eta = etaString(stats.movies.uploaded + stats.movies.skipped, total * 2);
+        process.stdout.write(`\r[${idx}/${total}] ${pct}% | ↑${stats.movies.uploaded} skip${stats.movies.skipped} ✗${stats.movies.failed} | ETA:${eta} | ${displaySlug}`);
     } catch (outerErr) {
         console.error(`\n  ✗ Bỏ qua phim lỗi không xác định [${movie?.slug || idx}]:`, outerErr.message);
     }
@@ -558,52 +593,164 @@ async function fetchAllMovies() {
         }
     }
 
-    // 3. DỰ PHÒNG 2: Quét từ API công cộng (Dùng khi không kết nối được Backend)
-    const allMovies = [];
-    let page = START_PAGE;
-    const maxPage = MAX_PAGES_LIMIT;
+    // 3. DỰ PHÒNG 2: Quét song song từ cả 3 nguồn API công cộng
+    //    - KKPhim  : phimapi.com
+    //    - VSMov   : phimapi.vsmov.pro
+    //    - NguonC  : phim.nguonc.com
+    const SOURCES = [
+        {
+            name: 'KKPhim',
+            getUrl: (p) => `https://phimapi.com/danh-sach/phim-moi-cap-nhat?page=${p}&limit=24`,
+            parseItems: (data) => data?.items || data?.data?.items || [],
+            parseTotalPages: (data) => data?.pagination?.totalPages || data?.data?.params?.pagination?.totalPage || 999,
+            mapMovie: (m) => ({
+                name: m.name,
+                slug: m.slug,
+                poster_url: m.poster_url,
+                thumb_url: m.thumb_url,
+                tmdb: m.tmdb || { id: '', type: 'movie' },
+            }),
+        },
+        {
+            name: 'VSMov',
+            getUrl: (p) => `https://vsmov.com/api/danh-sach/phim-moi-cap-nhat?page=${p}&limit=24`,
+            parseItems: (data) => data?.items || data?.data?.items || [],
+            parseTotalPages: (data) => data?.pagination?.totalPages || data?.data?.params?.pagination?.totalPage || 999,
+            mapMovie: (m) => ({
+                name: m.name,
+                slug: m.slug,
+                poster_url: m.poster_url,
+                thumb_url: m.thumb_url,
+                tmdb: m.tmdb || { id: '', type: 'movie' },
+            }),
+        },
+        {
+            name: 'NguonC',
+            getUrl: (p) => `https://phim.nguonc.com/api/films/phim-moi-cap-nhat?page=${p}`,
+            parseItems: (data) => data?.items || data?.data?.items || [],
+            parseTotalPages: (data) => data?.paginate?.total_page || data?.pagination?.totalPages || 999,
+            mapMovie: (m) => ({
+                name: m.name,
+                slug: m.slug,
+                poster_url: m.poster_url || m.thumb_url,
+                thumb_url: m.thumb_url || m.poster_url,
+                tmdb: m.tmdb || { id: '', type: 'movie' },
+            }),
+        },
+    ];
 
-    console.log('[phimapi] Đang fetch danh sách phim từ API...');
+    console.log(`[API] Fetch song song 3 nguồn (page-concurrency=${PAGE_CONCURRENCY} trang/lượt)...`);
 
-    while (page <= maxPage) {
+    /**
+     * Fetch tất cả trang từ 1 nguồn với concurrency cao.
+     * Thay vì fetch tuần tự (1 trang → chờ → 1 trang), fetch PAGE_CONCURRENCY trang cùng lúc.
+     * Tốc độ tăng ~PAGE_CONCURRENCY lần so với sequential.
+     */
+    async function fetchFromSource(source) {
+        const movies = [];
+        // Resume per-source nếu có checkpoint
+        const sourceStart = resumeMode && savedState.sources?.[source.name]
+            ? savedState.sources[source.name]
+            : START_PAGE;
+
+        // Bước 1: Lấy tổng số trang từ trang đầu
+        let totalPages = MAX_PAGES_LIMIT;
         try {
-            const url = `https://phimapi.com/danh-sach/phim-moi-cap-nhat?page=${page}&limit=64`;
-            const res = await fetch(url, { signal: AbortSignal.timeout(15000) });
-            if (!res.ok) {
-                if (res.status === 429) {
-                    console.warn(`  ⚠️ Dính Rate Limit (429) tại trang ${page}, tạm dừng 5s rồi thử lại...`);
-                    await sleep(5000);
-                    continue; // Thử lại cùng trang này
-                }
-                console.error(`  ⚠️ Lỗi HTTP ${res.status} tại trang ${page}, bỏ qua trang này...`);
-                page++;
-                await sleep(1000);
-                continue;
+            const firstRes = await fetch(source.getUrl(sourceStart), { signal: AbortSignal.timeout(15000) });
+            if (firstRes.ok) {
+                const firstData = await firstRes.json();
+                const items = source.parseItems(firstData);
+                if (items.length) movies.push(...items.map(source.mapMovie));
+                totalPages = Math.min(source.parseTotalPages(firstData), MAX_PAGES_LIMIT);
+                console.log(`  [${source.name}] Tổng: ${totalPages} trang | Bắt đầu từ trang ${sourceStart}`);
             }
-            const data = await res.json();
-
-            const items = data?.items || data?.data?.items || [];
-            if (!items.length) break;
-
-            allMovies.push(...items);
-            saveCheckpoint(page);
-
-            const totalPages = data?.pagination?.totalPages || data?.data?.params?.pagination?.totalPage || 999;
-            console.log(`  Trang ${page}/${totalPages}: ${items.length} phim (tổng: ${allMovies.length})`);
-
-            if (page >= totalPages || page >= maxPage) break;
-            if (allMovies.length >= LIMIT) break;
-
-            page++;
-            await sleep(300); // tránh spam API
         } catch (err) {
-            console.error(`  Lỗi trang ${page}: ${err.message}. Sẽ bỏ qua trang này và tiếp tục...`);
-            page++;
-            await sleep(1000);
-            continue;
+            console.warn(`  [${source.name}] Không lấy được trang đầu: ${err.message}`);
+            return movies;
+        }
+
+        // Bước 2: Fetch tất cả trang còn lại với concurrency
+        let page = sourceStart + 1;
+        while (page <= totalPages && movies.length < LIMIT) {
+            // Tạo batch các trang sẽ fetch cùng lúc
+            const batch = [];
+            for (let i = 0; i < PAGE_CONCURRENCY && page + i <= totalPages; i++) {
+                batch.push(page + i);
+            }
+
+            const results = await Promise.allSettled(
+                batch.map(async (p) => {
+                    for (let attempt = 0; attempt < 3; attempt++) {
+                        try {
+                            const res = await fetch(source.getUrl(p), { signal: AbortSignal.timeout(15000) });
+                            if (res.status === 429) {
+                                await sleep(5000 + attempt * 2000);
+                                continue;
+                            }
+                            if (!res.ok) return [];
+                            const data = await res.json();
+                            return source.parseItems(data).map(source.mapMovie);
+                        } catch {
+                            await sleep(1000 * (attempt + 1));
+                        }
+                    }
+                    return [];
+                })
+            );
+
+            for (const r of results) {
+                if (r.status === 'fulfilled' && r.value.length) {
+                    movies.push(...r.value);
+                }
+            }
+
+            page += PAGE_CONCURRENCY;
+            // Checkpoint per-source mỗi 50 trang
+            if (page % 50 < PAGE_CONCURRENCY) {
+                saveCheckpoint(page, { [source.name]: page });
+                process.stdout.write(`  [${source.name}] Trang ${Math.min(page, totalPages)}/${totalPages} | ${movies.length} phim\n`);
+            }
+
+            // Delay nhỏ giữa các batch để tránh rate limit
+            await sleep(200);
+        }
+
+        // Lưu checkpoint hoàn thành cho source này
+        saveCheckpoint(totalPages, { [source.name]: totalPages });
+        console.log(`  ✅ [${source.name}] Hoàn thành: ${movies.length} phim từ ${totalPages} trang`);
+        return movies;
+    }
+
+    // Fetch cả 3 nguồn song song nhau
+    const [kkResult, vsResult, ncResult] = await Promise.allSettled([
+        fetchFromSource(SOURCES[0]),
+        fetchFromSource(SOURCES[1]),
+        fetchFromSource(SOURCES[2]),
+    ]);
+
+    // Merge + dedup theo slug
+    const mergedMap = new Map();
+    for (const result of [kkResult, vsResult, ncResult]) {
+        if (result.status !== 'fulfilled') continue;
+        for (const m of result.value) {
+            if (!m.slug) continue;
+            if (!mergedMap.has(m.slug)) {
+                mergedMap.set(m.slug, m);
+            } else {
+                const existing = mergedMap.get(m.slug);
+                if (!existing.poster_url && m.poster_url) existing.poster_url = m.poster_url;
+                if (!existing.thumb_url && m.thumb_url) existing.thumb_url = m.thumb_url;
+                if (!existing.tmdb?.id && m.tmdb?.id) existing.tmdb = m.tmdb;
+            }
         }
     }
 
+    const kkCount = kkResult.status === 'fulfilled' ? kkResult.value.length : 0;
+    const vsCount = vsResult.status === 'fulfilled' ? vsResult.value.length : 0;
+    const ncCount = ncResult.status === 'fulfilled' ? ncResult.value.length : 0;
+    console.log(`\n✅ [Tổng hợp] KKPhim: ${kkCount} | VSMov: ${vsCount} | NguonC: ${ncCount} | Unique (sau dedup): ${mergedMap.size} phim`);
+
+    const allMovies = Array.from(mergedMap.values());
     return allMovies.slice(0, LIMIT === Infinity ? undefined : LIMIT);
 }
 
@@ -706,10 +853,11 @@ async function main() {
 
     stats.movies.total = movies.length * 2; // poster + thumb
 
-    console.log(`\n[Bắt đầu] ${movies.length} phim\n`);
+    syncStartTime = Date.now();
+    console.log(`\n[Bắt đầu] ${movies.length} phim | page-concurrency=${PAGE_CONCURRENCY} | batch=${newOnly ? 20 : 10}\n`);
 
-    // Batch processing: 10 phim song song
-    const BATCH_SIZE = 10;
+    // Tăng batch size khi dùng --new-only (vì hầu hết là HeadObject check nhanh)
+    const BATCH_SIZE = newOnly ? 20 : 10;
     for (let i = 0; i < movies.length; i += BATCH_SIZE) {
         const batch = movies.slice(i, i + BATCH_SIZE);
 
