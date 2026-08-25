@@ -206,7 +206,25 @@ async function WatchData({
     }
 
     const movie = data.movie;
-    const episodes = data.episodes;
+    let episodes = data.episodes;
+
+    // Sắp xếp danh sách server ưu tiên chất lượng cao
+    if (episodes && Array.isArray(episodes)) {
+        episodes.sort((a: any, b: any) => {
+            const nameA = (a.server_name || "").toLowerCase();
+            const nameB = (b.server_name || "").toLowerCase();
+            
+            const getScore = (name: string) => {
+                if (name.includes('4k')) return 4;
+                if (name.includes('2k')) return 3;
+                if (name.includes('1080p') || name.includes('fhd') || name.includes('full hd')) return 2;
+                if (name.includes('720p') || name.includes('hd')) return 1;
+                return 0;
+            };
+            
+            return getScore(nameB) - getScore(nameA);
+        });
+    }
 
     // Tìm tập phim hiện tại - Tìm trong tất cả các server
     let currentEpisode = null;

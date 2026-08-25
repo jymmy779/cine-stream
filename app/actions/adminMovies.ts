@@ -87,30 +87,30 @@ export async function addExclusiveMovie(data: Record<string, string>) {
         if (!tmdbId.trim()) {
             return { error: "Phim chưa có trên PhimAPI. Bắt buộc phải nhập TMDB ID để hệ thống lấy dữ liệu!" };
         }
-        
+
         try {
             const tmdbType = type === "single" ? "movie" : "tv";
-            const apiKey = "fb7bb23f03b6994dafc674c074d01761"; 
+            const apiKey = "fb7bb23f03b6994dafc674c074d01761";
             const [resVi, resEn] = await Promise.all([
                 axios.get(`https://api.themoviedb.org/3/${tmdbType}/${tmdbId.trim()}?api_key=${apiKey}&language=vi-VN`, AXIOS_OPTIONS).catch(() => null),
                 axios.get(`https://api.themoviedb.org/3/${tmdbType}/${tmdbId.trim()}?api_key=${apiKey}&language=en-US`, AXIOS_OPTIONS).catch(() => null)
             ]);
-            
+
             const dataVi = resVi ? resVi.data : null;
             const dataEn = resEn ? resEn.data : null;
-            
+
             if (dataVi || dataEn) {
                 const dataObj = dataVi || dataEn;
                 const enData = dataEn || dataVi;
-                
+
                 movieName = dataObj.title || dataObj.name || "";
                 originName = enData.title || enData.name || dataObj.original_title || dataObj.original_name || "";
-                
+
                 const pPath = enData.poster_path || dataObj.poster_path || "";
                 const bPath = enData.backdrop_path || dataObj.backdrop_path || pPath;
                 posterUrl = pPath ? `https://image.tmdb.org/t/p/w500${pPath}` : "";
                 thumbUrl = bPath ? `https://image.tmdb.org/t/p/w780${bPath}` : "";
-                
+
                 const releaseDate = dataObj.release_date || dataObj.first_air_date || "";
                 if (releaseDate) {
                     year = parseInt(releaseDate.split('-')[0]);
@@ -130,11 +130,11 @@ export async function addExclusiveMovie(data: Record<string, string>) {
 
     // 1. Insert movie
     const { data: movie, error: insertError } = await supabase.from('exclusive_movies').insert([
-        { 
+        {
             tmdb_id: tmdbId.trim() || "",
-            slug: slug.toLowerCase().trim(), 
-            type, 
-            status, 
+            slug: slug.toLowerCase().trim(),
+            type,
+            status,
             lang_tag: langTag,
             sub_docquyen: subDocquyen,
             name: movieName,
@@ -161,12 +161,12 @@ export async function addExclusiveMovie(data: Record<string, string>) {
         // Nếu là phim bộ, kiểm tra xem có nhập bulk_links ngay từ đầu không
         const bulkLinks = data.bulk_links;
         const bulkVttLinks = data.bulk_vtt_links;
-        
+
         if (bulkLinks && bulkLinks.trim().length > 0) {
             const rawM3u8 = bulkLinks.split('\n').map(l => l.trim());
             const rawVtt = bulkVttLinks ? bulkVttLinks.split('\n').map(l => l.trim()) : [];
             const rawEmbed = data.bulk_embed_links ? data.bulk_embed_links.split('\n').map(l => l.trim()) : [];
-            
+
             const episodeInserts = [];
             let epIndex = 0;
             for (let i = 0; i < rawM3u8.length; i++) {
@@ -184,7 +184,7 @@ export async function addExclusiveMovie(data: Record<string, string>) {
                     epIndex++;
                 }
             }
-            
+
             if (episodeInserts.length > 0) {
                 const { error: bulkError } = await supabase.from('exclusive_episodes').insert(episodeInserts);
                 if (bulkError) return { error: bulkError.message };
@@ -202,11 +202,11 @@ export async function addExclusiveMovie(data: Record<string, string>) {
         const expiresDays = data.expires_in_days ? parseInt(data.expires_in_days) : null;
         let finalThumb = thumbUrl;
         let finalPoster = posterUrl;
-        
+
         // Nếu ảnh lấy từ PhimAPI (chỉ có path) thì thêm host
         if (finalThumb && !finalThumb.startsWith('http')) finalThumb = `https://phimimg.com/${finalThumb}`;
         if (finalPoster && !finalPoster.startsWith('http')) finalPoster = `https://phimimg.com/${finalPoster}`;
-        
+
         await addStarredMovie(
             movie.slug,
             movieName,
@@ -276,10 +276,10 @@ export async function updateExclusiveMovie(id: string, data: Record<string, stri
             const expiresDays = data.expires_in_days ? parseInt(data.expires_in_days) : null;
             let finalThumb = movie.thumb_url;
             let finalPoster = movie.poster_url;
-            
+
             if (finalThumb && !finalThumb.startsWith('http')) finalThumb = `https://phimimg.com/${finalThumb}`;
             if (finalPoster && !finalPoster.startsWith('http')) finalPoster = `https://phimimg.com/${finalPoster}`;
-            
+
             await addStarredMovie(
                 movie.slug,
                 movie.name,
@@ -297,11 +297,11 @@ export async function updateExclusiveMovie(id: string, data: Record<string, stri
 
 export async function bulkAddExclusiveEpisodes(movieId: string, startEpisode: number, linksText: string, vttLinksText: string, embedLinksText: string = "", status: string = "published") {
     if (!linksText.trim() && !embedLinksText.trim()) return { error: "Danh sách link trống" };
-    
+
     const rawM3u8 = linksText.split('\n').map(l => l.trim());
     const rawVtt = vttLinksText ? vttLinksText.split('\n').map(l => l.trim()) : [];
     const rawEmbed = embedLinksText ? embedLinksText.split('\n').map(l => l.trim()) : [];
-    
+
     let validCount = 0;
     const maxLen = Math.max(rawM3u8.length, rawEmbed.length);
     for (let i = 0; i < maxLen; i++) {
@@ -310,10 +310,10 @@ export async function bulkAddExclusiveEpisodes(movieId: string, startEpisode: nu
     if (validCount === 0) return { error: "Không tìm thấy link hợp lệ" };
 
     const supabase = await createClient();
-    
+
     const episodesToInsert = [];
     let epOffset = 0;
-    
+
     for (let i = 0; i < maxLen; i++) {
         if ((rawM3u8[i] && rawM3u8[i].length > 0) || (rawEmbed[i] && rawEmbed[i].length > 0)) {
             const epNum = startEpisode + epOffset;
@@ -359,7 +359,7 @@ export async function addEpisode(movieId: string, data: Record<string, string>) 
 
     try {
         const supabase = await createClient();
-        
+
         let insertError = null;
         for (let attempt = 0; attempt < 3; attempt++) {
             const { error, data: insertedData } = await supabase
@@ -376,7 +376,7 @@ export async function addEpisode(movieId: string, data: Record<string, string>) 
                     order,
                     status
                 }).select();
-                
+
             if (!error) {
                 insertError = null;
                 break;
@@ -427,7 +427,7 @@ export async function updateEpisode(id: string, data: Record<string, string>) {
                     status
                 })
                 .eq("id", id);
-                
+
             if (!error) {
                 updateError = null;
                 break;
@@ -507,7 +507,7 @@ export async function importMovieFromApi(apiUrl: string, data: Record<string, an
 
         let type = movieData.type === 'series' || movieData.type === 'hoathinh' || movieData.type === 'tvshows' ? 'series' : 'single';
         let year = movieData.year || new Date().getFullYear();
-        
+
         if (movieData.category && typeof movieData.category === 'object' && !Array.isArray(movieData.category)) {
             Object.values(movieData.category).forEach((group: any) => {
                 if (group.group?.name === "Định dạng" && group.list) {
@@ -528,15 +528,16 @@ export async function importMovieFromApi(apiUrl: string, data: Record<string, an
         const supabase = await createClient();
 
         const domain = (
-            resData.data?.APP_DOMAIN_CDN_IMAGE || 
-            resData.APP_DOMAIN_CDN_IMAGE || 
-            resData.data?.pathImage || 
-            resData.pathImage || 
+            resData.data?.APP_DOMAIN_CDN_IMAGE ||
+            resData.APP_DOMAIN_CDN_IMAGE ||
+            resData.data?.pathImage ||
+            resData.pathImage ||
             "https://phimimg.com"
         ).replace(/\/$/, "");
         const isOPhim = domain.includes("ophim") || (resData.data?.seoOnPage?.og_url?.includes("ophim") ?? false) || (resData.data?.seoOnPage?.seoSchema?.url?.includes("ophim") ?? false);
         const isVsMov = domain.includes("vsmov") || apiUrl.includes("vsmov");
         const isKkPhim = apiUrl.includes("phimapi.com") || apiUrl.includes("kkphim");
+        const isNguonc = domain.includes("nguonc") || apiUrl.includes("nguonc");
 
         let sourceSuffix = "";
         if (isOPhim || apiUrl.includes("ophim")) {
@@ -570,7 +571,7 @@ export async function importMovieFromApi(apiUrl: string, data: Record<string, an
         let parsedPosterUrl = buildUrl(rawPoster || rawThumb);
         let parsedThumbUrl = buildUrl(rawThumb || rawPoster);
 
-        if (isOPhim || isVsMov) {
+        if (isOPhim || isVsMov || isNguonc) {
             // OPhim / VSMov bị đảo ngược thumb_url (ảnh đứng poster) và poster_url (ảnh nằm thumb)
             parsedPosterUrl = buildUrl(rawThumb || rawPoster);
             parsedThumbUrl = buildUrl(rawPoster || rawThumb);
@@ -578,7 +579,7 @@ export async function importMovieFromApi(apiUrl: string, data: Record<string, an
 
         let parsedCategory = movieData.category || [];
         let parsedCountry = movieData.country || [];
-        
+
         // Handle NguonC's category object structure
         if (movieData.category && typeof movieData.category === 'object' && !Array.isArray(movieData.category)) {
             const catList: any[] = [];
@@ -606,7 +607,7 @@ export async function importMovieFromApi(apiUrl: string, data: Record<string, an
 
             const newEpCur = movieData.episode_current || movieData.current_episode || "";
             const oldEpCur = existingMovie.episode_current || "";
-            
+
             // So sánh số tập để cập nhật episode_current nếu nguồn mới có tập cao hơn
             const newMatch = newEpCur.match(/\d+/);
             const oldMatch = oldEpCur.match(/\d+/);
@@ -645,7 +646,7 @@ export async function importMovieFromApi(apiUrl: string, data: Record<string, an
             const getRank = (q: string) => qualityRanks[q?.toUpperCase()] || 0;
             const newQuality = movieData.quality || "";
             const oldQuality = existingMovie.quality || "";
-            
+
             if (getRank(newQuality) > getRank(oldQuality) || (!oldQuality && newQuality)) {
                 updatePayload.quality = newQuality;
             }
@@ -659,11 +660,11 @@ export async function importMovieFromApi(apiUrl: string, data: Record<string, an
             }
         } else {
             const { data, error } = await supabase.from('exclusive_movies').insert([
-                { 
+                {
                     tmdb_id: tmdbId,
-                    slug: movieData.slug, 
-                    type, 
-                    status, 
+                    slug: movieData.slug,
+                    type,
+                    status,
                     lang_tag: movieData.lang || "Vietsub",
                     sub_docquyen: subDocquyen,
                     name: movieData.name,
@@ -700,7 +701,7 @@ export async function importMovieFromApi(apiUrl: string, data: Record<string, an
             const baseServerName = server.server_name || "Vietsub #1";
             const finalServerName = baseServerName.endsWith(sourceSuffix) ? baseServerName : `${baseServerName}${sourceSuffix}`;
             newServerNames.add(finalServerName);
-            
+
             let order = 1;
             for (const ep of serverData) {
                 episodeInserts.push({
@@ -723,7 +724,7 @@ export async function importMovieFromApi(apiUrl: string, data: Record<string, an
                 .delete()
                 .eq("movie_id", movie.id)
                 .in("server_name", serverNamesArray);
-                
+
             const { error: bulkError } = await supabase.from('exclusive_episodes').insert(episodeInserts);
             if (bulkError) {
                 console.error("Lỗi insert episodes", bulkError);
@@ -780,10 +781,10 @@ export async function importMovieFromApi(apiUrl: string, data: Record<string, an
         if (isStarred) {
             let finalThumb = movieData.thumb_url;
             let finalPoster = movieData.poster_url;
-            
+
             if (finalThumb && !finalThumb.startsWith('http')) finalThumb = `https://phimimg.com/${finalThumb}`;
             if (finalPoster && !finalPoster.startsWith('http')) finalPoster = `https://phimimg.com/${finalPoster}`;
-            
+
             await addStarredMovie(
                 movie.slug,
                 movie.name,

@@ -28,7 +28,7 @@ export const mockTopics: TopicItem[] = [
     {
         id: "phim-4k",
         title: "Phim 4K",
-        href: "/danh-sach/phim-moi-cap-nhat",
+        href: "/danh-sach/phim-4k",
         bgColor: "from-[#d94a38] to-[#ab3024]",
         icon: Flame,
         imageUrl: "https://image.tmdb.org/t/p/w500/bRBeSHfGHwkEpImlhxPmOcUsaeg.jpg",
@@ -140,7 +140,7 @@ export default function TopicsClient({ initialTopics }: { initialTopics?: TopicI
                         Khám phá các bộ sưu tập và chủ đề phim đang được quan tâm trên LoFilm.
                     </p>
                 </div>
- 
+
                 <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-3 xl:grid-cols-4 gap-4 md:gap-5">
                     {topics.map((topic) => {
                         const Icon = getIconComponent(topic.icon);

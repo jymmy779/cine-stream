@@ -338,6 +338,7 @@ export async function getCatalog(req: Request, res: Response) {
       else if (queryType === "hoat-hinh" || queryType === "hoathinh") where.type = "hoathinh";
       else if (queryType === "tv-shows" || queryType === "tvshows") where.type = "tvshows";
       else if (queryType === "phim-chieu-rap" || queryType === "cinema") where.chieurap = true;
+      else if (queryType === "phim-4k") where.quality = { contains: "4K" };
       else where.type = queryType;
     }
 
