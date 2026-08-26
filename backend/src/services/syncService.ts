@@ -361,7 +361,7 @@ export async function upsertMovieDetail(
     const normalizedCountries = normalizeCountries(m.country || []);
     const countryRecords = await prisma.country.findMany({
       where: { slug: { in: normalizedCountries.map((country) => country.slug) } },
-      select: { id: true },
+      select: { id: true, slug: true },
     });
 
     if (sourcePrefix === "KK" && Array.isArray(m.country) && m.country.length > 0) {
@@ -373,10 +373,33 @@ export async function upsertMovieDetail(
       });
     }
 
-    const existingCountryCount = sourcePrefix === "KK"
-      ? 0
-      : await prisma.movieCountry.count({ where: { movie_id: targetMovieId } });
-    const countriesToStore = sourcePrefix === "KK" || existingCountryCount === 0
+    const existingCountries = sourcePrefix === "KK"
+      ? []
+      : await prisma.movieCountry.findMany({
+          where: { movie_id: targetMovieId },
+          select: { country_id: true, country: { select: { slug: true } } },
+        });
+    const incomingHasSpecificCountry = countryRecords.some(
+      (record) => record.slug !== "quoc-gia-khac",
+    );
+    const existingOnlyHasFallback = existingCountries.length > 0 && existingCountries.every(
+      (record) => record.country.slug === "quoc-gia-khac",
+    );
+
+    // A concrete country from a secondary source may replace the generic fallback,
+    // but secondary sources never overwrite concrete metadata already supplied.
+    if (sourcePrefix !== "KK" && incomingHasSpecificCountry && existingOnlyHasFallback) {
+      await prisma.movieCountry.deleteMany({
+        where: {
+          movie_id: targetMovieId,
+          country_id: { in: existingCountries.map((record) => record.country_id) },
+        },
+      });
+    }
+
+    const countriesToStore = sourcePrefix === "KK"
+      || existingCountries.length === 0
+      || (incomingHasSpecificCountry && existingOnlyHasFallback)
       ? countryRecords
       : [];
 

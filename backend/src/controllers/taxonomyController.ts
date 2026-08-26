@@ -1,5 +1,6 @@
 ﻿import { Request, Response } from "express";
 import { prisma } from "../lib/prisma.js";
+import { STANDARD_COUNTRIES } from "../services/taxonomyNormalizer.js";
 
 const STANDARD_CATEGORY_ORDER = [
   "bi-an", "chien-tranh", "chinh-kich", "co-trang", "gia-dinh", "giat-gan", "hoat-hinh", "hai-huoc",
@@ -52,6 +53,7 @@ export async function getCategories(req: Request, res: Response) {
 export async function getCountries(req: Request, res: Response) {
   try {
     const countries = await prisma.country.findMany({
+      where: { slug: { in: STANDARD_COUNTRIES.map((country) => country.slug) } },
       select: {
         id: true,
         name: true,
@@ -59,7 +61,13 @@ export async function getCountries(req: Request, res: Response) {
       },
     });
 
-    countries.sort((a, b) => a.name.localeCompare(b.name, "vi"));
+    const countryOrder = new Map(
+      STANDARD_COUNTRIES.map((country, index) => [country.slug, index]),
+    );
+    countries.sort((a, b) =>
+      (countryOrder.get(a.slug) ?? Number.MAX_SAFE_INTEGER)
+      - (countryOrder.get(b.slug) ?? Number.MAX_SAFE_INTEGER),
+    );
 
     return res.json({
       status: "success",

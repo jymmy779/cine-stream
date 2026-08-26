@@ -41,52 +41,45 @@ export const STANDARD_CATEGORIES: TaxonomyItem[] = [
 ];
 
 // ==========================================
-// 2. DANH SÁCH 36 QUỐC GIA CHUẨN LOFILM (4 cột x 9 hàng)
+// 2. DANH SÁCH QUỐC GIA CHUẨN LOFILM
 // ==========================================
 export const STANDARD_COUNTRIES: TaxonomyItem[] = [
-  // Cột 1
-  { name: "Việt Nam", slug: "viet-nam" },
-  { name: "Trung Quốc", slug: "trung-quoc" },
-  { name: "Hàn Quốc", slug: "han-quoc" },
-  { name: "Nhật Bản", slug: "nhat-ban" },
-  { name: "Thái Lan", slug: "thai-lan" },
-  { name: "Âu Mỹ", slug: "au-my" },
-  { name: "Hồng Kông", slug: "hong-kong" },
-  { name: "Đài Loan", slug: "dai-loan" },
-  { name: "Ấn Độ", slug: "an-do" },
-
-  // Cột 2
   { name: "Anh", slug: "anh" },
-  { name: "Pháp", slug: "phap" },
-  { name: "Đức", slug: "duc" },
-  { name: "Tây Ban Nha", slug: "tay-ban-nha" },
-  { name: "Nga", slug: "nga" },
+  { name: "Ba Lan", slug: "ba-lan" },
+  { name: "Brazil", slug: "brazil" },
+  { name: "Bồ Đào Nha", slug: "bo-dao-nha" },
   { name: "Canada", slug: "canada" },
+  { name: "Châu Phi", slug: "chau-phi" },
+  { name: "Hà Lan", slug: "ha-lan" },
+  { name: "Hàn Quốc", slug: "han-quoc" },
+  { name: "Hồng Kông", slug: "hong-kong" },
+  { name: "Indonesia", slug: "indonesia" },
+  { name: "Malaysia", slug: "malaysia" },
+  { name: "Mexico", slug: "mexico" },
+  { name: "Na Uy", slug: "na-uy" },
+  { name: "Nam Phi", slug: "nam-phi" },
+  { name: "Nga", slug: "nga" },
+  { name: "Nhật Bản", slug: "nhat-ban" },
+  { name: "Philippines", slug: "philippines" },
+  { name: "Pháp", slug: "phap" },
+  { name: "Quốc Gia Khác", slug: "quoc-gia-khac" },
+  { name: "Thái Lan", slug: "thai-lan" },
+  { name: "Thổ Nhĩ Kỳ", slug: "tho-nhi-ky" },
+  { name: "Thụy Sĩ", slug: "thuy-si" },
+  { name: "Thụy Điển", slug: "thuy-dien" },
+  { name: "Trung Quốc", slug: "trung-quoc" },
+  { name: "Tây Ban Nha", slug: "tay-ban-nha" },
+  { name: "UAE", slug: "uae" },
+  { name: "Ukraina", slug: "ukraina" },
+  { name: "Việt Nam", slug: "viet-nam" },
+  { name: "Âu Mỹ", slug: "au-my" },
   { name: "Úc", slug: "uc" },
   { name: "Ý", slug: "y" },
-  { name: "Indonesia", slug: "indonesia" },
-
-  // Cột 3
-  { name: "Philippines", slug: "philippines" },
-  { name: "Malaysia", slug: "malaysia" },
-  { name: "Thổ Nhĩ Kỳ", slug: "tho-nhi-ky" },
-  { name: "Brazil", slug: "brazil" },
-  { name: "Mexico", slug: "mexico" },
-  { name: "Argentina", slug: "argentina" },
-  { name: "Ba Lan", slug: "ba-lan" },
   { name: "Đan Mạch", slug: "dan-mach" },
-  { name: "Thụy Điển", slug: "thuy-dien" },
-
-  // Cột 4
-  { name: "Thụy Sĩ", slug: "thuy-si" },
-  { name: "Hà Lan", slug: "ha-lan" },
-  { name: "Na Uy", slug: "na-uy" },
-  { name: "Phần Lan", slug: "phan-lan" },
-  { name: "Bỉ", slug: "bi" },
-  { name: "Bồ Đào Nha", slug: "bo-dao-nha" },
-  { name: "Colombia", slug: "colombia" },
-  { name: "Nam Phi", slug: "nam-phi" },
-  { name: "Quốc Gia Khác", slug: "quoc-gia-khac" },
+  { name: "Đài Loan", slug: "dai-loan" },
+  { name: "Đức", slug: "duc" },
+  { name: "Ả Rập Xê Út", slug: "a-rap-xe-ut" },
+  { name: "Ấn Độ", slug: "an-do" },
 ];
 
 // Map tra cứu nhanh chuẩn
@@ -100,6 +93,7 @@ const CATEGORY_MAP: Record<string, TaxonomyItem> = {
   "phim-hanh-dong": { name: "Hành Động", slug: "hanh-dong" },
   "hanh dong": { name: "Hành Động", slug: "hanh-dong" },
   "action": { name: "Hành Động", slug: "hanh-dong" },
+  "action-adventure": { name: "Hành Động", slug: "hanh-dong" },
 
   // Tình cảm / Lãng mạn
   "tinh-cam": { name: "Tình Cảm", slug: "tinh-cam" },
@@ -239,7 +233,7 @@ const CATEGORY_MAP: Record<string, TaxonomyItem> = {
   "than-thoai": { name: "Thần Thoại", slug: "than-thoai" },
   "phim-than-thoai": { name: "Thần Thoại", slug: "than-thoai" },
   "than thoai": { name: "Thần Thoại", slug: "than-thoai" },
-  "gia-tuong": { name: "Thần Thoại", slug: "than-thoai" },
+  "gia-tuong": { name: "Viễn Tưởng", slug: "vien-tuong" },
   "fantasy": { name: "Thần Thoại", slug: "than-thoai" },
   "mythology": { name: "Thần Thoại", slug: "than-thoai" },
 
@@ -256,6 +250,8 @@ const CATEGORY_MAP: Record<string, TaxonomyItem> = {
   "music": { name: "Âm Nhạc", slug: "am-nhac" },
   "musical": { name: "Âm Nhạc", slug: "am-nhac" },
   "ca-nhac": { name: "Âm Nhạc", slug: "am-nhac" },
+  "nhac": { name: "Âm Nhạc", slug: "am-nhac" },
+  "phim-nhac": { name: "Âm Nhạc", slug: "am-nhac" },
 
   // Giật gân
   "giat-gan": { name: "Giật Gân", slug: "giat-gan" },
@@ -352,6 +348,7 @@ const COUNTRY_MAP: Record<string, TaxonomyItem> = {
   "usa": { name: "Âu Mỹ", slug: "au-my" },
   "united-states": { name: "Âu Mỹ", slug: "au-my" },
   "united-states-of-america": { name: "Âu Mỹ", slug: "au-my" },
+  "hoa-ky": { name: "Âu Mỹ", slug: "au-my" },
 
   // Hồng Kông
   "hong-kong": { name: "Hồng Kông", slug: "hong-kong" },
@@ -497,18 +494,48 @@ const COUNTRY_MAP: Record<string, TaxonomyItem> = {
   "nam-phi": { name: "Nam Phi", slug: "nam-phi" },
   "south-africa": { name: "Nam Phi", slug: "nam-phi" },
   "za": { name: "Nam Phi", slug: "nam-phi" },
-  "chau-phi": { name: "Nam Phi", slug: "nam-phi" },
+
+  // Châu Phi (khu vực rộng, không đồng nghĩa với quốc gia Nam Phi)
+  "chau-phi": { name: "Châu Phi", slug: "chau-phi" },
+  "africa": { name: "Châu Phi", slug: "chau-phi" },
+
+  // Ukraine
+  "ukraine": { name: "Ukraina", slug: "ukraina" },
+  "ukraina": { name: "Ukraina", slug: "ukraina" },
+  "ua": { name: "Ukraina", slug: "ukraina" },
+
+  // Ireland
+  "ireland": { name: "Ireland", slug: "ireland" },
+  "ai-len": { name: "Ireland", slug: "ireland" },
+  "ie": { name: "Ireland", slug: "ireland" },
+
+  // Các Tiểu Vương Quốc Ả Rập Thống Nhất
+  "uae": { name: "UAE", slug: "uae" },
+  "united-arab-emirates": { name: "UAE", slug: "uae" },
+  "cac-tieu-vuong-quoc-a-rap": { name: "UAE", slug: "uae" },
+  "cac-tieu-vuong-quoc-a-rap-thong-nhat": { name: "UAE", slug: "uae" },
+
+  // Ả Rập Xê Út
+  "a-rap-xe-ut": { name: "Ả Rập Xê Út", slug: "a-rap-xe-ut" },
+  "saudi-arabia": { name: "Ả Rập Xê Út", slug: "a-rap-xe-ut" },
+  "sa": { name: "Ả Rập Xê Út", slug: "a-rap-xe-ut" },
 
   // Quốc gia khác
   "quoc-gia-khac": { name: "Quốc Gia Khác", slug: "quoc-gia-khac" },
   "khac": { name: "Quốc Gia Khác", slug: "quoc-gia-khac" },
   "other": { name: "Quốc Gia Khác", slug: "quoc-gia-khac" },
-  "uae": { name: "Quốc Gia Khác", slug: "quoc-gia-khac" },
-  "ukraine": { name: "Quốc Gia Khác", slug: "quoc-gia-khac" },
-  "ukraina": { name: "Quốc Gia Khác", slug: "quoc-gia-khac" },
-  "ie": { name: "Quốc Gia Khác", slug: "quoc-gia-khac" },
-  "ireland": { name: "Quốc Gia Khác", slug: "quoc-gia-khac" },
 };
+
+// VSMov exposes individual African countries while KKPhim uses the broader
+// canonical "Châu Phi" bucket. South Africa remains the separate "Nam Phi" item.
+const AFRICAN_COUNTRY_KEYS = new Set([
+  "ai-cap", "algeria", "angola", "botswana", "burkina-faso", "cameroon",
+  "chad", "congo", "cote-divoire", "djibouti", "equatorial-guinea", "ethiopia",
+  "gabon", "gambia", "ghana", "guinea-bissau", "kenya", "lesotho", "liberia",
+  "libyan-arab-jamahiriya", "malawi", "mali", "mauritania", "mauritius", "morocco",
+  "mozambique", "namibia", "nigeria", "reunion", "rwanda", "senegal", "sudan",
+  "swaziland", "tanzania", "tunisia", "uganda", "zambia", "zimbabwe",
+]);
 
 function normalizeKey(str: string): string {
   if (!str) return "";
@@ -609,15 +636,33 @@ export function normalizeCountry(raw: { name?: string; slug?: string } | string)
 
   // 1. Thử match qua slug
   const keySlug = normalizeKey(rawSlug);
-  if (COUNTRY_MAP[keySlug]) return COUNTRY_MAP[keySlug];
+  const keyName = normalizeKey(rawName);
+
+  // VSMov uses slug "my" for Mỹ, while ISO MY and some providers use it for Malaysia.
+  if (keySlug === "my") {
+    return keyName === "my"
+      ? STANDARD_COUN_MAP.get("au-my")!
+      : STANDARD_COUN_MAP.get("malaysia")!;
+  }
+
+  if (COUNTRY_MAP[keySlug]) {
+    return STANDARD_COUN_MAP.get(COUNTRY_MAP[keySlug].slug)
+      || STANDARD_COUN_MAP.get("quoc-gia-khac")!;
+  }
 
   // 2. Thử match qua name
-  const keyName = normalizeKey(rawName);
-  if (COUNTRY_MAP[keyName]) return COUNTRY_MAP[keyName];
+  if (COUNTRY_MAP[keyName]) {
+    return STANDARD_COUN_MAP.get(COUNTRY_MAP[keyName].slug)
+      || STANDARD_COUN_MAP.get("quoc-gia-khac")!;
+  }
 
-  // 3. Nếu là mã quốc gia lạ hoặc không nhận diện -> Map về "Quốc Gia Khác"
+  if (AFRICAN_COUNTRY_KEYS.has(keySlug) || AFRICAN_COUNTRY_KEYS.has(keyName)) {
+    return STANDARD_COUN_MAP.get("chau-phi")!;
+  }
+
+  // 3. Slug not present in the KKPhim canonical catalog -> generic fallback.
   if (rawName || rawSlug) {
-    return { name: "Quốc Gia Khác", slug: "quoc-gia-khac" };
+    return STANDARD_COUN_MAP.get("quoc-gia-khac")!;
   }
 
   return null;
@@ -655,6 +700,11 @@ export function normalizeCountries(list: any[]): TaxonomyItem[] {
     if (normalized && normalized.slug && !map.has(normalized.slug)) {
       map.set(normalized.slug, normalized);
     }
+  }
+
+  // "Quốc Gia Khác" is only a fallback. Never keep it beside a concrete country.
+  if (map.size > 1) {
+    map.delete("quoc-gia-khac");
   }
 
   return Array.from(map.values());
