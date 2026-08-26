@@ -55,6 +55,10 @@ function getSourcePriority(serverName?: string | null): number {
     return 50;
 }
 
+function getLanguagePriority(serverName?: string | null): number {
+    return (serverName || "").toUpperCase().includes("VIETSUB") ? 1 : 0;
+}
+
 export function sortEpisodeServers<T extends EpisodeServer>(servers: T[], isSeriesOngoing: boolean): T[] {
     return [...servers].sort((first, second) => {
         if (isSeriesOngoing) {
@@ -64,6 +68,9 @@ export function sortEpisodeServers<T extends EpisodeServer>(servers: T[], isSeri
 
         const qualityDifference = getQualityPriority(second.quality || second.server_name) - getQualityPriority(first.quality || first.server_name);
         if (qualityDifference !== 0) return qualityDifference;
+
+        const languageDifference = getLanguagePriority(second.server_name) - getLanguagePriority(first.server_name);
+        if (languageDifference !== 0) return languageDifference;
 
         const firstHasM3u8 = first.server_data.some((episode) => Boolean(episode.link_m3u8?.trim())) ? 1 : 0;
         const secondHasM3u8 = second.server_data.some((episode) => Boolean(episode.link_m3u8?.trim())) ? 1 : 0;
