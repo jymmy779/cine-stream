@@ -40,6 +40,28 @@ function extractRawList(raw: any): any[] {
   return [];
 }
 
+function normalizeGroupName(value: unknown): string {
+  return String(value || "")
+    .normalize("NFD")
+    .replace(/[\u0300-\u036f]/g, "")
+    .replace(/đ/g, "d")
+    .replace(/Đ/g, "D")
+    .trim()
+    .toLowerCase();
+}
+
+function extractNguonCGroup(raw: any, groupName: "the loai" | "quoc gia"): any[] {
+  if (!raw || typeof raw !== "object" || Array.isArray(raw)) return [];
+
+  for (const group of Object.values(raw) as any[]) {
+    if (normalizeGroupName(group?.group?.name) === groupName && Array.isArray(group?.list)) {
+      return group.list.filter((item: any) => item?.name);
+    }
+  }
+
+  return [];
+}
+
 /**
  * Lấy danh sách phim mới cập nhật theo trang từ NguonC
  */
@@ -118,8 +140,14 @@ export async function fetchNguonCMovieDetail(slug: string): Promise<KKPhimDetail
         })),
       }));
 
-      const parsedCategories = normalizeCategories(extractRawList(movie.category));
-      const parsedCountries = normalizeCountries(extractRawList(movie.country));
+      const categoryGroup = extractNguonCGroup(movie.category, "the loai");
+      const countryGroup = extractNguonCGroup(movie.category, "quoc gia");
+      const parsedCategories = normalizeCategories(
+        categoryGroup.length > 0 ? categoryGroup : extractRawList(movie.category),
+      );
+      const parsedCountries = normalizeCountries(
+        countryGroup.length > 0 ? countryGroup : extractRawList(movie.country),
+      );
 
       const totalEps = movie.total_episodes ? String(movie.total_episodes) : "1";
       const isSingle = totalEps === "1" || totalEps === "1 Tập";

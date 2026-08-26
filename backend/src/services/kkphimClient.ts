@@ -163,9 +163,32 @@ export async function fetchKKPhimMovieDetail(slug: string): Promise<KKPhimDetail
   let retries = 2;
   while (retries >= 0) {
     try {
-      const res = await client.get(`/phim/${encodeURIComponent(slug)}`);
-      if (res.data?.status && res.data?.movie) {
-        return res.data;
+      const encodedSlug = encodeURIComponent(slug);
+
+      // The v1 endpoint is the canonical source for taxonomy metadata. Its detail
+      // payload lives at data.item and episodes are nested inside that item.
+      try {
+        const v1Response = await client.get(`/v1/api/phim/${encodedSlug}`);
+        const v1Item = v1Response.data?.data?.item;
+        if (v1Item?.slug) {
+          const { episodes = [], ...movie } = v1Item;
+          return {
+            status: true,
+            movie: {
+              ...movie,
+              _id: String(movie._id || movie.id || movie.slug),
+            } as KKPhimMovieDetail,
+            episodes,
+          };
+        }
+      } catch {
+        // Some older titles may only exist on the legacy detail endpoint.
+      }
+
+      // Backward-compatible fallback for titles not available through v1.
+      const legacyResponse = await client.get(`/phim/${encodedSlug}`);
+      if (legacyResponse.data?.status && legacyResponse.data?.movie) {
+        return legacyResponse.data;
       }
       return null;
     } catch (error: any) {

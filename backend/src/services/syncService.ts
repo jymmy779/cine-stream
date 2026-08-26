@@ -373,7 +373,14 @@ export async function upsertMovieDetail(
       });
     }
 
-    for (const countryRecord of countryRecords) {
+    const existingCountryCount = sourcePrefix === "KK"
+      ? 0
+      : await prisma.movieCountry.count({ where: { movie_id: targetMovieId } });
+    const countriesToStore = sourcePrefix === "KK" || existingCountryCount === 0
+      ? countryRecords
+      : [];
+
+    for (const countryRecord of countriesToStore) {
 
       await prisma.movieCountry.upsert({
         where: {

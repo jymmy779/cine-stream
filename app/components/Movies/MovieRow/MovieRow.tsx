@@ -12,8 +12,9 @@ import Container from "@/app/components/UI/Container";
 import MovieRowCard from "@/app/components/Movies/MovieCard/MovieRowCard";
 import { useMovies } from "@/app/hooks/useMovies";
 import SwiperNavButtons from "@/app/components/UI/Common/SwiperNavButtons";
+import CountryFlag from "@/app/components/UI/Common/CountryFlag";
 import MovieRowSkeleton from "./MovieRowSkeleton";
-import { ChevronRight, Film, Sparkles } from "lucide-react";
+import { ChevronRight, Film } from "lucide-react";
 
 interface MovieRowProps {
     title: string;
@@ -29,7 +30,7 @@ function getHubMeta(viewAllLink: string, title: string) {
     const link = (viewAllLink || "").toLowerCase();
     if (link.includes("han-quoc")) {
         return {
-            flag: "🇰🇷",
+            countryName: "Hàn Quốc",
             tag: "K-DRAMA HUB",
             sub: "Tuyển tập siêu phẩm Hàn Quốc",
             watermark: "KOREA",
@@ -42,7 +43,7 @@ function getHubMeta(viewAllLink: string, title: string) {
     }
     if (link.includes("trung-quoc")) {
         return {
-            flag: "🇨🇳",
+            countryName: "Trung Quốc",
             tag: "C-BIZ HUB",
             sub: "Hoa Ngữ đặc sắc chuẩn gu",
             watermark: "C-BIZ",
@@ -55,7 +56,7 @@ function getHubMeta(viewAllLink: string, title: string) {
     }
     if (link.includes("au-my")) {
         return {
-            flag: "🇺🇸",
+            countryName: "Âu Mỹ",
             tag: "HOLLYWOOD",
             sub: "Bom tấn Âu Mỹ cháy màn ảnh",
             watermark: "US•UK",
@@ -67,7 +68,7 @@ function getHubMeta(viewAllLink: string, title: string) {
         };
     }
     return {
-        flag: "🎬",
+        countryName: null,
         tag: "CINEMA HUB",
         sub: "Phim chọn lọc thịnh hành",
         watermark: "LOFILM",
@@ -112,7 +113,11 @@ function MovieRow({
                     {/* Top Hub Info */}
                     <div className="space-y-2 relative z-10">
                         <div className="inline-flex items-center gap-1.5 px-2.5 py-1 rounded-full text-[10.5px] font-extrabold uppercase tracking-wider border border-white/10 bg-black/60 shadow-sm">
-                            <span>{hub.flag}</span>
+                            {hub.countryName ? (
+                                <CountryFlag name={hub.countryName} className="w-5 h-3.5" />
+                            ) : (
+                                <Film size={14} aria-hidden="true" />
+                            )}
                             <span className="text-white/90">{hub.tag}</span>
                         </div>
 

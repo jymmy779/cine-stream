@@ -154,7 +154,7 @@ export default function TopCommentsSlider() {
                                             <div className="flex items-center gap-2 sm:gap-3">
                                                 <AvatarCell avatar={comment.user.avatar} name={comment.user.name} />
                                                 <div className="flex flex-col">
-                                                    <span className={`font-bold text-xs sm:text-sm text-white/80 truncate max-w-[100px] sm:max-w-[120px] ${comment.user.isOwner ? 'rgb-text' : ''}`}>{comment.user.name}</span>
+                                                    <span className={`font-bold text-xs sm:text-sm text-white/80 drop-shadow-[0_2px_3px_rgba(0,0,0,0.7)] truncate max-w-[100px] sm:max-w-[120px] ${comment.user.isOwner ? 'rgb-text' : ''}`}>{comment.user.name}</span>
                                                 </div>
                                             </div>
 
