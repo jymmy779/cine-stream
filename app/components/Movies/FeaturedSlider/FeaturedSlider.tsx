@@ -16,6 +16,7 @@ import { filterDuplicateMovies, getImageUrl, getRawImageUrl, getEpisodeStatus, g
 import { getR2MovieThumbUrl } from "@/app/utils/r2ImageUrl";
 import SmartImage from "@/app/components/UI/Common/SmartImage";
 import FavoriteButton from "@/app/components/UI/Common/FavoriteButton";
+import { MovieQualityBadge } from "@/app/components/UI/Common/MovieBadge";
 import Container from "@/app/components/UI/Container";
 import { Play, ChevronLeft, ChevronRight } from "lucide-react";
 import FeaturedSliderSkeleton from "./FeaturedSliderSkeleton";
@@ -167,9 +168,7 @@ function FeaturedSlider({
                                             {getEpisodeStatus(movie)}
                                         </div>
                                         {movie.quality && (
-                                            <div className="px-2 py-0.5 sm:px-2.5 sm:py-0.5 lg:px-3 lg:py-1 flex items-center justify-center bg-[#FAD078] text-amber-950 text-[10px] sm:text-[11px] lg:text-xs font-bold rounded shadow-sm leading-none">
-                                                {movie.quality}
-                                            </div>
+                                            <MovieQualityBadge movie={movie} className="px-2 py-0.5 sm:px-2.5 sm:py-0.5 lg:px-3 lg:py-1 bg-[#FAD078] text-amber-950 text-[10px] sm:text-[11px] lg:text-xs rounded shadow-sm" />
                                         )}
                                     </div>
 

@@ -9,6 +9,7 @@ import { getImageUrl, getRawImageUrl, getEpisodeStatus } from "@/app/utils/movie
 import { getR2MovieThumbUrl } from "@/app/utils/r2ImageUrl";
 import MoviePreviewWrapper from "./MoviePreviewWrapper";
 import { Play } from "lucide-react";
+import { MovieQualityBadge } from "@/app/components/UI/Common/MovieBadge";
 
 interface MovieRowCardProps {
     movie: Movie;
@@ -50,9 +51,7 @@ function MovieRowCard({ movie, priority = false, adZone = "movie_row", onClick }
                     {/* Solid Badges (High Contrast, Zero Blur) */}
                     <div className="absolute bottom-2 left-2 right-2 flex items-center justify-between gap-1 pointer-events-none z-10">
                         {movie.quality ? (
-                            <span className="h-4.5 px-1.5 bg-[#FAD078] rounded text-amber-950 shadow-sm text-[9px] font-bold flex items-center justify-center leading-none">
-                                {movie.quality}
-                            </span>
+                            <MovieQualityBadge movie={movie} className="h-4.5 px-1.5 bg-[#FAD078] rounded text-amber-950 shadow-sm text-[9px]" />
                         ) : <div />}
                         {movie.episode_current && (
                             <span className="h-4.5 px-1.5 bg-[#A7F3D0] rounded text-emerald-950 shadow-sm text-[9px] font-bold flex items-center justify-center leading-none truncate max-w-[70%]">

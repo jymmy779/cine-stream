@@ -16,6 +16,7 @@ import Container from "@/app/components/UI/Container";
 import MoviePreviewWrapper from "@/app/components/Movies/MovieCard/MoviePreviewWrapper";
 import { Award, ChevronRight, Play, Sparkles } from "lucide-react";
 import SwiperNavButtons from "@/app/components/UI/Common/SwiperNavButtons";
+import { MovieQualityBadge } from "@/app/components/UI/Common/MovieBadge";
 
 interface EditorChoiceRowProps {
     title?: string;
@@ -127,9 +128,7 @@ function EditorChoiceRow({
                                             {/* Solid Badges at Bottom */}
                                             <div className="absolute bottom-2 left-2 right-2 flex items-center justify-between gap-1 z-20 pointer-events-none">
                                                 {movie.quality ? (
-                                                    <span className="h-4.5 px-1.5 bg-[#FAD078] rounded text-amber-950 shadow-sm text-[9px] font-bold flex items-center justify-center leading-none">
-                                                        {movie.quality}
-                                                    </span>
+                                                    <MovieQualityBadge movie={movie} className="h-4.5 px-1.5 bg-[#FAD078] rounded text-amber-950 shadow-sm text-[9px]" />
                                                 ) : <div />}
                                                 {movie.episode_current && (
                                                     <span className="h-4.5 px-1.5 bg-[#A7F3D0] rounded text-emerald-950 shadow-sm text-[9px] font-bold flex items-center justify-center leading-none truncate max-w-[65%]">

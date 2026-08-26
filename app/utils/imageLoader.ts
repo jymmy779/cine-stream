@@ -66,7 +66,7 @@ export default function imageLoader({ src, width, quality }: { src: string, widt
 
   // 4. Các nguồn ảnh phimimg.com / phim.nguonc.com vốn dĩ đã là ảnh WebP chuẩn từ nguồn,
   // Tải trực tiếp originUrl để lấy đầy đủ độ phân giải gốc sắc nét, không bị wsrv.nl giới hạn size/bóp mờ hay zoom sát
-  if (originUrl.includes('phimimg.com') || originUrl.includes('phim.nguonc.com') || originUrl.includes('img.ophim.live')) {
+  if (/\.webp(?:$|[?#])/i.test(originUrl)) {
     return originUrl;
   }
 

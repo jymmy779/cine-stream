@@ -16,6 +16,7 @@ import { getImageUrl, getRawImageUrl, getEpisodeStatus, generateCategorySlug, ge
 import { getR2MovieThumbUrl, getR2MoviePosterUrl, getR2MovieLogoUrl } from "@/app/utils/r2ImageUrl";
 import Container from "@/app/components/UI/Container";
 import Skeleton from "@/app/components/UI/Skeleton/Skeleton";
+import { MovieQualityBadge } from "@/app/components/UI/Common/MovieBadge";
 import FavoriteButton from "@/app/components/UI/Common/FavoriteButton";
 import HeroSliderSkeleton from "./HeroSliderSkeleton";
 import { fetchLogoFromTMDB } from "@/app/utils/tmdbUtils";
@@ -253,9 +254,7 @@ export default function HeroSlider({ initialMovies }: HeroSliderProps) {
                                 {getEpisodeStatus(currentMovie)}
                             </div>
                             {currentMovie.quality && (
-                                <div className="px-2.5 py-1 sm:px-3 sm:py-1 text-[11px] sm:text-xs font-bold bg-[#FAD078] text-amber-950 rounded-md shadow-sm leading-none">
-                                    {currentMovie.quality}
-                                </div>
+                                <MovieQualityBadge movie={currentMovie} className="px-2.5 py-1 sm:px-3 sm:py-1 text-[11px] sm:text-xs bg-[#FAD078] text-amber-950 rounded-md shadow-sm" />
                             )}
                             {((currentMovie as any).lang_tag || currentMovie.lang) && (
                                 <div className="px-2.5 py-1 sm:px-3 sm:py-1 text-[11px] sm:text-xs font-bold bg-[#C084FC] text-purple-950 rounded-md shadow-sm leading-none">

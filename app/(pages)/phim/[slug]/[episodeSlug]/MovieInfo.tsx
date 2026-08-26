@@ -6,6 +6,7 @@ import { getImageUrl, getRawImageUrl } from "@/app/utils/movieUtils";
 import SmartImage from "@/app/components/UI/Common/SmartImage";
 import { getR2MoviePosterUrl } from "@/app/utils/r2ImageUrl";
 import { cleanContent } from "@/app/utils/textUtils";
+import { MovieQualityBadge } from "@/app/components/UI/Common/MovieBadge";
 
 interface MovieInfoProps {
   slug: string;
@@ -70,9 +71,7 @@ const MovieInfo = ({ slug, movie, episode }: MovieInfoProps) => {
                 </span>
               )}
               {movie.quality && (
-                <span className="px-2.5 py-1 bg-[#FAD078] text-amber-950 text-xs font-bold rounded-md shadow-sm leading-none">
-                  {movie.quality}
-                </span>
+                <MovieQualityBadge movie={movie} className="px-2.5 py-1 bg-[#FAD078] text-amber-950 text-xs rounded-md shadow-sm" />
               )}
               <span className="px-2.5 py-1 bg-[#F5CAE3] text-pink-950 text-xs font-bold rounded-md shadow-sm leading-none">
                 {episode.name || "Trailer"}

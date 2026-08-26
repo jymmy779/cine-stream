@@ -100,10 +100,13 @@ model EpisodeServer {
   id          String    @id @default(uuid())
   movie_id    String
   server_name String
+  quality     String?
+  source_slug String?
   movie       Movie     @relation(fields: [movie_id], references: [id], onDelete: Cascade)
   server_data Episode[]
 
   @@index([movie_id])
+  @@index([movie_id, source_slug])
 }
 
 model Episode {

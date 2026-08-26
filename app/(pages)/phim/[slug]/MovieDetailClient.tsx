@@ -6,6 +6,7 @@ import TransitionLink from "@/app/components/UI/Transition/TransitionLink";
 import Container from "@/app/components/UI/Container";
 import FavoriteButton from "@/app/components/UI/Common/FavoriteButton";
 import WatchlistButton from "@/app/components/UI/Common/WatchlistButton";
+import { MovieQualityBadge } from "@/app/components/UI/Common/MovieBadge";
 import { MessageSquare, Play, Video, Share2, Star, Clock, Globe, Film, Sparkles, CheckCircle2, ChevronRight, User, X } from "lucide-react";
 import { Movie, EpisodeServer } from "@/app/types/movie";
 import {
@@ -320,9 +321,7 @@ export default function MovieDetailClient({
                                     {getEpisodeStatus(movie)}
                                 </div>
                                 {movie.quality && (
-                                    <div className="px-2.5 py-1 text-xs font-bold bg-[#FAD078] text-amber-950 rounded-md shadow-sm leading-none">
-                                        {movie.quality}
-                                    </div>
+                                    <MovieQualityBadge movie={movie} className="px-2.5 py-1 text-xs bg-[#FAD078] text-amber-950 rounded-md shadow-sm" />
                                 )}
                                 <div className="px-2.5 py-1 text-xs font-bold bg-[#C084FC] text-purple-950 rounded-md shadow-sm leading-none">
                                     {((movie as any).lang_tag || movie.lang || "Vietsub").replace(/Lồng Tiếng/g, "LT").replace(/Thuyết Minh/g, "TM")}

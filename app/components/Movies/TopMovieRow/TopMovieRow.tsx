@@ -16,6 +16,7 @@ import SmartImage from "@/app/components/UI/Common/SmartImage";
 import Container from "@/app/components/UI/Container";
 import MoviePreviewWrapper from "@/app/components/Movies/MovieCard/MoviePreviewWrapper";
 import SwiperNavButtons from "@/app/components/UI/Common/SwiperNavButtons";
+import { MovieQualityBadge } from "@/app/components/UI/Common/MovieBadge";
 import { getR2MoviePosterUrl } from "@/app/utils/r2ImageUrl";
 import TopMovieRowSkeleton from "./TopMovieRowSkeleton";
 
@@ -116,9 +117,7 @@ function TopMovieRow({ title, apiUrl, viewAllLink, initialMovies, titleGradient 
 
                                             {/* Badges on Bottom Right */}
                                             <div className="absolute bottom-2 right-2 flex flex-col items-end gap-1 z-20 pointer-events-none">
-                                                <div className="h-4.5 px-1.5 bg-[#FAD078] rounded text-amber-950 shadow-sm text-[9px] font-bold flex items-center justify-center leading-none">
-                                                    {movie.quality || "HD"}
-                                                </div>
+                                                <MovieQualityBadge movie={movie} className="h-4.5 px-1.5 bg-[#FAD078] rounded text-amber-950 shadow-sm text-[9px]" />
                                                 <div className="h-4.5 px-1.5 bg-[#A7F3D0] rounded text-emerald-950 shadow-sm text-[9px] font-bold flex items-center justify-center leading-none">
                                                     {getEpisodeStatus(movie)}
                                                 </div>

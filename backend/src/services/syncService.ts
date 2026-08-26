@@ -24,6 +24,7 @@ import {
   normalizeCountries,
 } from "./taxonomyNormalizer.js";
 import { syncMovieToFts } from "../controllers/movieController.js";
+import { getQualityPriority } from "../utils/serverPriority.js";
 
 const STATE_FILE_PATH = path.resolve(process.cwd(), ".sync_state.json");
 
@@ -222,16 +223,8 @@ export async function upsertMovieDetail(
     let targetMovieId = "";
     let isNew = false;
 
-    // Quality ranking logic
-    const qualityRanks: Record<string, number> = {
-      CAM: 1,
-      SD: 2,
-      HD: 3,
-      FHD: 4,
-      "2K": 5,
-      "4K": 6,
-    };
-    const getRank = (q: string) => qualityRanks[q?.toUpperCase()] || 0;
+    const incomingQuality = toSafeString(m.quality);
+    const sourceQuality = incomingQuality || "HD";
 
     if (existingMovie) {
       targetMovieId = existingMovie.id;
@@ -278,8 +271,8 @@ export async function upsertMovieDetail(
       }
 
       // Cập nhật chất lượng cao hơn
-      if (getRank(m.quality) > getRank(existingMovie.quality || "")) {
-        updateData.quality = m.quality;
+      if (getQualityPriority(sourceQuality) > getQualityPriority(existingMovie.quality || "")) {
+        updateData.quality = sourceQuality;
       }
 
       await prisma.movie.update({
@@ -306,7 +299,7 @@ export async function upsertMovieDetail(
           time: safeTime,
           episode_current: safeEpCurrent,
           episode_total: safeEpTotal,
-          quality: m.quality || "HD",
+          quality: sourceQuality,
           lang: m.lang || "Vietsub",
           notify: toSafeString(m.notify),
           showtimes: toSafeString(m.showtimes),
@@ -396,11 +389,45 @@ export async function upsertMovieDetail(
           },
         });
 
+        // Legacy KK servers were stored without the source suffix. Reuse and
+        // normalize them instead of creating a duplicate during a targeted refresh.
+        if (!serverRecord && sourcePrefix === "KK") {
+          const legacyServer = await prisma.episodeServer.findFirst({
+            where: {
+              movie_id: targetMovieId,
+              server_name: rawServerName,
+            },
+          });
+          if (legacyServer) {
+            serverRecord = await prisma.episodeServer.update({
+              where: { id: legacyServer.id },
+              data: {
+                server_name: finalServerName,
+                quality: sourceQuality,
+                source_slug: m.slug,
+              },
+            });
+          }
+        }
+
         if (!serverRecord) {
           serverRecord = await prisma.episodeServer.create({
             data: {
               movie_id: targetMovieId,
               server_name: finalServerName,
+              quality: sourceQuality,
+              source_slug: m.slug,
+            },
+          });
+        } else if (
+          (incomingQuality && serverRecord.quality !== incomingQuality) ||
+          serverRecord.source_slug !== m.slug
+        ) {
+          serverRecord = await prisma.episodeServer.update({
+            where: { id: serverRecord.id },
+            data: {
+              ...(incomingQuality ? { quality: incomingQuality } : {}),
+              source_slug: m.slug,
             },
           });
         }
@@ -510,6 +537,96 @@ export async function upsertMovieDetail(
     console.error(`[SyncService] Lỗi upsert phim ${m.slug} (${sourcePrefix}):`, error.message);
     return { success: false, isNew: false, movieId: null, movieName: m.name || "", movieSlug: m.slug || "" };
   }
+}
+
+export type SyncSource = "all" | "kkphim" | "vsmov" | "nguonc";
+
+export interface SelectedMovieRefreshResult {
+  slug: string;
+  name: string;
+  success: boolean;
+  sources: Array<{
+    source: Exclude<SyncSource, "all">;
+    status: "updated" | "not_found" | "failed";
+  }>;
+}
+
+/** Refresh only selected DB movies. Network fetches run two movies at a time;
+ * SQLite writes remain sequential to avoid writer contention. */
+export async function refreshSelectedMovies(
+  rawSlugs: string[],
+  source: SyncSource = "all"
+): Promise<SelectedMovieRefreshResult[]> {
+  const slugs = Array.from(
+    new Set(rawSlugs.map((slug) => String(slug || "").trim()).filter(Boolean))
+  ).slice(0, 50);
+  const sources: Array<Exclude<SyncSource, "all">> =
+    source === "all" ? ["kkphim", "vsmov", "nguonc"] : [source];
+  const movieRecords = await prisma.movie.findMany({
+    where: { slug: { in: slugs } },
+    select: {
+      slug: true,
+      name: true,
+      episodes: {
+        select: { server_name: true, source_slug: true },
+      },
+    },
+  });
+  const movieBySlug = new Map(movieRecords.map((movie) => [movie.slug, movie]));
+  const nameBySlug = new Map(movieRecords.map((movie) => [movie.slug, movie.name]));
+  const results: SelectedMovieRefreshResult[] = [];
+
+  for (let index = 0; index < slugs.length; index += 2) {
+    const chunk = slugs.slice(index, index + 2);
+    const fetchedChunk = await Promise.all(
+      chunk.map(async (slug) => {
+        const details = await Promise.all(
+          sources.map(async (currentSource) => {
+            const suffix = currentSource === "kkphim" ? " KK" : currentSource === "vsmov" ? " VS" : " NC";
+            const sourceSlug = movieBySlug.get(slug)?.episodes.find(
+              (server) => server.server_name.endsWith(suffix) && server.source_slug
+            )?.source_slug || slug;
+            let detail: KKPhimDetailResponse | null = null;
+            if (currentSource === "kkphim") detail = await fetchKKPhimMovieDetail(sourceSlug);
+            else if (currentSource === "vsmov") detail = await fetchVSMovMovieDetail(sourceSlug);
+            else detail = await fetchNguonCMovieDetail(sourceSlug);
+            return { source: currentSource, detail };
+          })
+        );
+        return { slug, details };
+      })
+    );
+
+    for (const movie of fetchedChunk) {
+      const sourceResults: SelectedMovieRefreshResult["sources"] = [];
+      for (const entry of movie.details) {
+        if (!entry.detail) {
+          sourceResults.push({ source: entry.source, status: "not_found" });
+          continue;
+        }
+        const prefix = entry.source === "kkphim" ? "KK" : entry.source === "vsmov" ? "VS" : "NC";
+        const upsertResult = await upsertMovieDetail(entry.detail, prefix);
+        sourceResults.push({
+          source: entry.source,
+          status: upsertResult.success ? "updated" : "failed",
+        });
+      }
+
+      const success = sourceResults.some((item) => item.status === "updated");
+      results.push({
+        slug: movie.slug,
+        name: nameBySlug.get(movie.slug) || movie.slug,
+        success,
+        sources: sourceResults,
+      });
+      addLiveLog(
+        `${success ? "[~ REFRESH]" : "[! REFRESH]"} ${nameBySlug.get(movie.slug) || movie.slug}`,
+        success ? "update" : "error"
+      );
+    }
+  }
+
+  return results;
 }
 
 /**
@@ -791,6 +908,13 @@ export async function mergeMoviesManually(sourceSlug: string, targetSlug: string
     });
 
     if (existingTargetServer) {
+      await prisma.episodeServer.update({
+        where: { id: existingTargetServer.id },
+        data: {
+          source_slug: existingTargetServer.source_slug || srv.source_slug || sourceMovie.slug,
+          quality: existingTargetServer.quality || srv.quality,
+        },
+      });
       for (const ep of srv.server_data) {
         const existingEp = await prisma.episode.findFirst({
           where: { server_id: existingTargetServer.id, slug: ep.slug },
@@ -811,7 +935,10 @@ export async function mergeMoviesManually(sourceSlug: string, targetSlug: string
     } else {
       await prisma.episodeServer.update({
         where: { id: srv.id },
-        data: { movie_id: targetMovie.id },
+        data: {
+          movie_id: targetMovie.id,
+          source_slug: srv.source_slug || sourceMovie.slug,
+        },
       });
     }
   }

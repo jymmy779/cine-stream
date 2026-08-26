@@ -178,7 +178,11 @@ async function existsOnR2(key) {
 }
 
 /** Download ảnh từ URL, trả về Buffer */
-async function downloadImage(url, timeout = 15000) {
+function buildWsrvUrl(url) {
+    return `https://wsrv.nl/?url=${encodeURIComponent(url)}&output=webp`;
+}
+
+async function fetchImageBuffer(url, timeout = 15000) {
     const controller = new AbortController();
     const timer = setTimeout(() => controller.abort(), timeout);
     try {
@@ -196,9 +200,30 @@ async function downloadImage(url, timeout = 15000) {
             throw new Error(`HTTP ${res.status}`);
         }
         const arrayBuf = await res.arrayBuffer();
-        return Buffer.from(arrayBuf);
+        const buffer = Buffer.from(arrayBuf);
+        if (!isValidImageBuffer(buffer)) {
+            throw new Error('Response is not a valid image');
+        }
+        return buffer;
     } finally {
         clearTimeout(timer);
+    }
+}
+
+// Try the source first. If its WAF blocks the GitHub runner, let wsrv.nl fetch it.
+async function downloadImage(url, timeout = 15000) {
+    try {
+        return await fetchImageBuffer(url, timeout);
+    } catch (directError) {
+        if (url.startsWith('https://wsrv.nl/') || url.startsWith('http://wsrv.nl/')) {
+            throw directError;
+        }
+
+        try {
+            return await fetchImageBuffer(buildWsrvUrl(url), Math.max(timeout, 30000));
+        } catch (proxyError) {
+            throw new Error(`Direct: ${directError.message}; wsrv.nl: ${proxyError.message}`);
+        }
     }
 }
 
@@ -210,6 +235,27 @@ function isValidImageBuffer(buf) {
         return false;
     }
     return true;
+}
+
+async function selectCorrectlyOrientedBuffer(buffer, expectedOrientation, alternateUrl) {
+    const metadata = await sharp(buffer, { failOnError: false }).metadata();
+    const isExpected = expectedOrientation === 'portrait'
+        ? metadata.height >= metadata.width
+        : metadata.width >= metadata.height;
+
+    if (isExpected || !alternateUrl) return buffer;
+
+    try {
+        const alternateBuffer = await downloadImage(alternateUrl);
+        const alternateMetadata = await sharp(alternateBuffer, { failOnError: false }).metadata();
+        const alternateIsExpected = expectedOrientation === 'portrait'
+            ? alternateMetadata.height >= alternateMetadata.width
+            : alternateMetadata.width >= alternateMetadata.height;
+
+        return alternateIsExpected ? alternateBuffer : buffer;
+    } catch {
+        return buffer;
+    }
 }
 
 /** Convert buffer → WebP rồi upload lên R2 */
@@ -373,7 +419,12 @@ async function processMovieImages(movie, idx, total) {
                 const url = normalizeImgUrl(poster_url);
                 if (url) {
                     await withRetry(async () => {
-                        const buf = await downloadImage(url);
+                        const downloaded = await downloadImage(url);
+                        const buf = await selectCorrectlyOrientedBuffer(
+                            downloaded,
+                            'portrait',
+                            normalizeImgUrl(thumb_url),
+                        );
                         await convertAndUpload(buf, posterKey, 400, 80);
                         stats.movies.uploaded++;
                         posterDone = true;
@@ -395,7 +446,12 @@ async function processMovieImages(movie, idx, total) {
                 const url = normalizeImgUrl(thumb_url || poster_url);
                 if (url) {
                     await withRetry(async () => {
-                        const buf = await downloadImage(url);
+                        const downloaded = await downloadImage(url);
+                        const buf = await selectCorrectlyOrientedBuffer(
+                            downloaded,
+                            'landscape',
+                            normalizeImgUrl(poster_url),
+                        );
                         await convertAndUpload(buf, thumbKey, 800, 82);
                         stats.movies.uploaded++;
                         thumbDone = true;

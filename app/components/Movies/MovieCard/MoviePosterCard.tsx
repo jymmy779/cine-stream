@@ -10,6 +10,7 @@ import { getR2MoviePosterUrl } from "@/app/utils/r2ImageUrl";
 import MoviePreviewWrapper from "./MoviePreviewWrapper";
 import { useBaitStore } from "@/app/store/useBaitStore";
 import { Play } from "lucide-react";
+import { MovieQualityBadge } from "@/app/components/UI/Common/MovieBadge";
 
 interface MoviePosterCardProps {
     movie: Movie;
@@ -60,9 +61,7 @@ function MoviePosterCard({ movie, priority = false, isFirst, isLast, user, adZon
 
                 {/* Solid Badges (High Contrast, Zero Blur) */}
                 <div className="absolute bottom-2 left-2 right-2 flex items-center justify-between gap-1 pointer-events-none z-10">
-                    <span className="h-4.5 px-1.5 bg-[#FAD078] rounded text-amber-950 shadow-sm text-[9px] font-bold flex items-center justify-center leading-none">
-                        {movie.quality || "HD"}
-                    </span>
+                    <MovieQualityBadge movie={movie} className="h-4.5 px-1.5 bg-[#FAD078] rounded text-amber-950 shadow-sm text-[9px]" />
                     {movie.episode_current && (
                         <span className="h-4.5 px-1.5 bg-[#A7F3D0] rounded text-emerald-950 shadow-sm text-[9px] font-bold flex items-center justify-center leading-none truncate max-w-[65%]">
                             {getEpisodeStatus(movie)}

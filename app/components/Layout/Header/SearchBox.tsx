@@ -7,6 +7,7 @@ import { Movie } from "@/app/types/movie";
 import { usePageTransition } from "@/app/components/UI/Transition/PageTransitionContext";
 import { getImageUrl, getRawImageUrl, getMoviePosterUrl, getMovieRawPosterUrl } from "@/app/utils/movieUtils";
 import SmartImage from "@/app/components/UI/Common/SmartImage";
+import { MovieQualityBadge } from "@/app/components/UI/Common/MovieBadge";
 import TransitionLink from "@/app/components/UI/Transition/TransitionLink";
 import { getR2MoviePosterUrl } from "@/app/utils/r2ImageUrl";
 
@@ -249,9 +250,7 @@ function SearchBoxInner({ autoFocus }: SearchBoxProps) {
                                                 <span className="text-[8px] md:text-[9px] px-1.5 py-0.5 rounded bg-white/5 border border-white/10 text-white/60 font-medium tracking-wide whitespace-nowrap shrink-0">
                                                     {movie.year || '2025'}
                                                 </span>
-                                                <span className="text-[8px] md:text-[9px] px-1.5 py-0.5 rounded bg-pink-500/10 border border-pink-500/20 text-pink-400 font-bold uppercase whitespace-nowrap shrink-0">
-                                                    {movie.quality || 'FHD'}
-                                                </span>
+                                                <MovieQualityBadge movie={movie} className="text-[8px] md:text-[9px] px-1.5 py-0.5 rounded bg-pink-500/10 border border-pink-500/20 text-pink-400 uppercase shrink-0" />
                                                 <span className="text-[8px] md:text-[9px] px-1.5 py-0.5 rounded bg-[#D497FF]/10 border border-[#D497FF]/20 text-[#D497FF] font-medium whitespace-nowrap shrink-0">
                                                     {(() => {
                                                         const epCurrent = String(movie.episode_current || "").trim();

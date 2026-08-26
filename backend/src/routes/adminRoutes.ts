@@ -10,6 +10,8 @@ import {
   getSyncLogs,
   getSystemStats,
   getPendingImagesForSync,
+  searchMoviesForRefresh,
+  refreshSelectedMoviesHandler,
 } from "../controllers/adminController.js";
 import { clearApiMemoryCache } from "../controllers/movieController.js";
 
@@ -18,6 +20,8 @@ const router = Router();
 router.get("/stats", getSystemStats);
 router.post("/movies/import", importMovie);
 router.post("/movies/merge", mergeMoviesHandler);
+router.get("/movies/refresh/search", searchMoviesForRefresh);
+router.post("/movies/refresh", refreshSelectedMoviesHandler);
 
 router.get("/sync/images-queue", getPendingImagesForSync);
 router.post("/sync/instant", triggerInstantSync);

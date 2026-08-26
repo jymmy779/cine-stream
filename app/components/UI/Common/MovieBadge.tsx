@@ -1,5 +1,6 @@
 import { Movie } from "@/app/types/movie";
 import { getEpisodeStatus } from "@/app/utils/movieUtils";
+import { isPremiumQuality } from "@/app/utils/serverPriority";
 
 interface MovieBadgeProps {
     movie: Movie;
@@ -7,9 +8,14 @@ interface MovieBadgeProps {
     className?: string;
 }
 
-export function MovieQualityBadge({ movie, className = "" }: MovieBadgeProps) {
+interface MovieQualityBadgeProps {
+    movie: Pick<Movie, "quality">;
+    className?: string;
+}
+
+export function MovieQualityBadge({ movie, className = "" }: MovieQualityBadgeProps) {
     const quality = movie.quality || "HD";
-    const isPremium = quality.toUpperCase().includes('K');
+    const isPremium = isPremiumQuality(quality);
 
     if (isPremium) {
         return (

@@ -61,6 +61,7 @@ export interface EpisodeItem {
 
 export interface EpisodeServer {
     server_name: string;
+    quality?: string;
     server_data: EpisodeItem[];
 }
 

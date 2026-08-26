@@ -96,3 +96,15 @@ export async function mergeMoviesAction(sourceSlug: string, targetSlug: string) 
   });
 }
 
+export async function searchMoviesForRefreshAction(query: string) {
+  return await fetchBackend(`/admin/movies/refresh/search?q=${encodeURIComponent(query)}`);
+}
+
+export async function refreshSelectedMoviesAction(slugs: string[], source: string = "all") {
+  return await fetchBackend("/admin/movies/refresh", {
+    method: "POST",
+    headers: { "Content-Type": "application/json" },
+    body: JSON.stringify({ slugs, source }),
+  });
+}
+

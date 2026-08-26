@@ -8,8 +8,65 @@ import {
   loadSyncState,
   mergeMoviesManually,
   getSourcePageStats,
+  refreshSelectedMovies,
 } from "../services/syncService.js";
 import { getCronStatus, toggleCron, recordSyncResult } from "../services/cronService.js";
+import { clearApiMemoryCache } from "./movieController.js";
+
+export async function searchMoviesForRefresh(req: Request, res: Response) {
+  try {
+    const query = String(req.query.q || "").trim();
+    if (query.length < 2) return res.json({ status: true, data: [] });
+
+    const movies = await prisma.movie.findMany({
+      where: {
+        OR: [
+          { name: { contains: query } },
+          { origin_name: { contains: query } },
+          { slug: { contains: query } },
+        ],
+      },
+      select: {
+        id: true,
+        name: true,
+        origin_name: true,
+        slug: true,
+        poster_url: true,
+        year: true,
+        quality: true,
+      },
+      orderBy: { updated_at: "desc" },
+      take: 20,
+    });
+    return res.json({ status: true, data: movies });
+  } catch (error: any) {
+    return res.status(500).json({ status: false, msg: error.message });
+  }
+}
+
+export async function refreshSelectedMoviesHandler(req: Request, res: Response) {
+  try {
+    const slugs = Array.isArray(req.body.slugs) ? req.body.slugs : [];
+    const source = (req.body.source || "all") as "all" | "kkphim" | "vsmov" | "nguonc";
+    if (slugs.length === 0) {
+      return res.status(400).json({ status: false, msg: "Chưa chọn phim cần cào lại." });
+    }
+    if (slugs.length > 50) {
+      return res.status(400).json({ status: false, msg: "Chỉ được chọn tối đa 50 phim mỗi lượt." });
+    }
+
+    const results = await refreshSelectedMovies(slugs, source);
+    clearApiMemoryCache();
+    const updated = results.filter((item) => item.success).length;
+    return res.json({
+      status: updated > 0,
+      msg: `Đã cào lại ${updated}/${results.length} phim.`,
+      data: { updated, total: results.length, results },
+    });
+  } catch (error: any) {
+    return res.status(500).json({ status: false, msg: error.message });
+  }
+}
 
 export async function importMovie(req: Request, res: Response) {
   try {

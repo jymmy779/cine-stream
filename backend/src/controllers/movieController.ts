@@ -1,6 +1,7 @@
 import { Request, Response } from "express";
 import { prisma } from "../lib/prisma.js";
 import { Prisma } from "@prisma/client";
+import { compareEpisodeServers, extractMaxEpisodeNumber } from "../utils/serverPriority.js";
 
 // High-speed In-Memory Cache (RAM)
 interface CacheEntry {
@@ -220,34 +221,9 @@ export async function getMovieDetail(req: Request, res: Response) {
         (movie.episode_current || "").toLowerCase().includes("full") ||
         movie.status === "completed");
 
-    function extractMaxEpisodeNumber(server: any): number {
-      if (!server?.server_data || !Array.isArray(server.server_data) || server.server_data.length === 0) return 0;
-      let maxEp = 0;
-      for (const ep of server.server_data) {
-        const text = `${ep.name || ""} ${ep.slug || ""}`;
-        const matches = text.match(/\d+/g);
-        if (matches) {
-          for (const m of matches) {
-            const num = parseInt(m, 10);
-            if (num > maxEp && num < 100000) maxEp = num;
-          }
-        }
-      }
-      return maxEp > 0 ? maxEp : server.server_data.length;
-    }
-
-    function getSourcePriorityScore(serverName: string): number {
-      const s = (serverName || "").toUpperCase();
-      if (s.includes("ĐỘC QUYỀN") || s.includes("EXCLUSIVE") || s.includes("SONG NGỮ")) return 100;
-      if (s.includes(" KK")) return 80;
-      if (s.includes(" VS")) return 60;
-      if (s.includes(" NC")) return 40;
-      if (s.includes(" OP")) return 20;
-      return 50;
-    }
-
     const formattedEpisodes = movie.episodes.map((s) => ({
       server_name: s.server_name,
+      quality: s.quality || "",
       server_data: s.server_data.map((ep) => ({
         name: ep.name,
         slug: ep.slug,
@@ -257,24 +233,9 @@ export async function getMovieDetail(req: Request, res: Response) {
       })),
     }));
 
-    const sortedEpisodes = formattedEpisodes.sort((a: any, b: any) => {
-      const maxEpA = extractMaxEpisodeNumber(a);
-      const maxEpB = extractMaxEpisodeNumber(b);
-      if (isSeriesOngoing && maxEpB !== maxEpA) {
-        return maxEpB - maxEpA;
-      }
-      const hasM3u8A = a.server_data?.some((ep: any) => ep.link_m3u8 && ep.link_m3u8.trim().length > 0) ? 1 : 0;
-      const hasM3u8B = b.server_data?.some((ep: any) => ep.link_m3u8 && ep.link_m3u8.trim().length > 0) ? 1 : 0;
-      if (hasM3u8B !== hasM3u8A) {
-        return hasM3u8B - hasM3u8A;
-      }
-      const prioA = getSourcePriorityScore(a.server_name);
-      const prioB = getSourcePriorityScore(b.server_name);
-      if (prioB !== prioA) {
-        return prioB - prioA;
-      }
-      return (a.server_name || "").localeCompare(b.server_name || "", "vi");
-    });
+    const sortedEpisodes = formattedEpisodes.sort((first, second) =>
+      compareEpisodeServers(first, second, isSeriesOngoing)
+    );
 
     // Tự động đồng bộ trường episode_current của movie theo số tập lớn nhất của Server đứng đầu
     if (sortedEpisodes.length > 0 && movie.type !== "single") {

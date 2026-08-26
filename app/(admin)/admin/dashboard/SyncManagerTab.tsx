@@ -8,9 +8,20 @@ import {
   startBulkSyncAction,
   pauseBulkSyncAction,
   mergeMoviesAction,
+  searchMoviesForRefreshAction,
+  refreshSelectedMoviesAction,
 } from "@/app/actions/adminSync";
 
 type SourceType = "all" | "kkphim" | "vsmov" | "nguonc";
+
+interface RefreshMovieOption {
+  id: string;
+  name: string;
+  origin_name?: string | null;
+  slug: string;
+  year?: number | null;
+  quality?: string | null;
+}
 
 const SOURCE_TABS: Array<{
   id: SourceType;
@@ -43,6 +54,14 @@ export default function SyncManagerTab() {
     nguonc: { start: "1", max: "" },
   });
   const [isBulkStarting, setIsBulkStarting] = useState(false);
+
+  // Selected movie refresh
+  const [refreshQuery, setRefreshQuery] = useState("");
+  const [refreshSearchResults, setRefreshSearchResults] = useState<RefreshMovieOption[]>([]);
+  const [selectedRefreshMovies, setSelectedRefreshMovies] = useState<RefreshMovieOption[]>([]);
+  const [isSearchingRefresh, setIsSearchingRefresh] = useState(false);
+  const [isRefreshingSelected, setIsRefreshingSelected] = useState(false);
+  const [refreshResults, setRefreshResults] = useState<any[]>([]);
 
   // Merge form state
   const [sourceSlug, setSourceSlug] = useState("");
@@ -112,6 +131,23 @@ export default function SyncManagerTab() {
     }, 2500);
     return () => clearInterval(interval);
   }, [loadStatus]);
+
+  useEffect(() => {
+    const query = refreshQuery.trim();
+    if (query.length < 2) {
+      setRefreshSearchResults([]);
+      setIsSearchingRefresh(false);
+      return;
+    }
+
+    setIsSearchingRefresh(true);
+    const timer = setTimeout(async () => {
+      const response = await searchMoviesForRefreshAction(query);
+      setRefreshSearchResults(response?.status && Array.isArray(response.data) ? response.data : []);
+      setIsSearchingRefresh(false);
+    }, 350);
+    return () => clearTimeout(timer);
+  }, [refreshQuery]);
 
   // Tự động cuộn xuống đáy khi có log mới NẾU đang bật auto-scroll
   useEffect(() => {
@@ -213,6 +249,46 @@ export default function SyncManagerTab() {
       toast.error(err.message || "Lỗi kết nối");
     } finally {
       setIsMerging(false);
+    }
+  };
+
+  const toggleRefreshMovie = (movie: RefreshMovieOption) => {
+    setSelectedRefreshMovies((current) => {
+      if (current.some((item) => item.slug === movie.slug)) {
+        return current.filter((item) => item.slug !== movie.slug);
+      }
+      if (current.length >= 50) {
+        toast.error("Mỗi lượt chỉ được chọn tối đa 50 phim");
+        return current;
+      }
+      return [...current, movie];
+    });
+  };
+
+  const handleRefreshSelected = async () => {
+    if (selectedRefreshMovies.length === 0) {
+      toast.error("Hãy chọn ít nhất một phim");
+      return;
+    }
+
+    setIsRefreshingSelected(true);
+    setRefreshResults([]);
+    try {
+      const response = await refreshSelectedMoviesAction(
+        selectedRefreshMovies.map((movie) => movie.slug),
+        activeSource,
+      );
+      if (Array.isArray(response?.data?.results)) setRefreshResults(response.data.results);
+      if (response?.status) {
+        toast.success(response.msg || "Đã cào lại phim được chọn");
+        loadStatus();
+      } else {
+        toast.error(response?.msg || "Không cào lại được phim đã chọn");
+      }
+    } catch (error: any) {
+      toast.error(error.message || "Lỗi kết nối backend");
+    } finally {
+      setIsRefreshingSelected(false);
     }
   };
 
@@ -592,6 +668,118 @@ export default function SyncManagerTab() {
             </div>
           )}
         </div>
+      </div>
+
+      {/* REFRESH SELECTED MOVIES */}
+      <div className="bg-[#14171E] border border-white/5 rounded-2xl p-6 shadow-xl">
+        <div className="flex flex-wrap items-center justify-between gap-3 pb-4 border-b border-white/10 mb-5">
+          <div className="flex items-center gap-3">
+            <div className="w-10 h-10 rounded-xl bg-emerald-500/10 text-emerald-400 flex items-center justify-center text-lg">
+              <i className="fa-solid fa-arrows-rotate"></i>
+            </div>
+            <div>
+              <h3 className="font-bold text-white text-base">Cào Lại Phim Được Chọn</h3>
+              <p className="text-xs text-gray-400">
+                Tìm trong database, chọn tối đa 50 phim và cập nhật từ {SOURCE_TABS.find((tab) => tab.id === activeSource)?.label}.
+              </p>
+            </div>
+          </div>
+          <span className="text-xs px-3 py-1.5 rounded-lg bg-emerald-500/10 text-emerald-300 border border-emerald-500/20">
+            Đã chọn: {selectedRefreshMovies.length}/50
+          </span>
+        </div>
+
+        <div className="grid grid-cols-1 lg:grid-cols-2 gap-5">
+          <div>
+            <label className="text-xs text-gray-400 block mb-2">Tìm theo tên phim hoặc slug</label>
+            <div className="relative">
+              <i className="fa-solid fa-magnifying-glass absolute left-3 top-3.5 text-gray-500 text-xs"></i>
+              <input
+                value={refreshQuery}
+                onChange={(event) => setRefreshQuery(event.target.value)}
+                placeholder="Ví dụ: lưỡi hái tử thần..."
+                className="w-full bg-[#0F1115] border border-white/10 text-white rounded-xl py-3 pl-9 pr-10 text-sm focus:outline-none focus:ring-1 focus:ring-emerald-400"
+              />
+              {isSearchingRefresh && <i className="fa-solid fa-spinner fa-spin absolute right-3 top-3.5 text-emerald-400"></i>}
+            </div>
+
+            {refreshQuery.trim().length >= 2 && (
+              <div className="mt-2 max-h-72 overflow-y-auto rounded-xl border border-white/10 bg-black/30 divide-y divide-white/5 custom-scrollbar">
+                {refreshSearchResults.length > 0 ? refreshSearchResults.map((movie) => {
+                  const selected = selectedRefreshMovies.some((item) => item.slug === movie.slug);
+                  return (
+                    <button
+                      key={movie.id}
+                      type="button"
+                      onClick={() => toggleRefreshMovie(movie)}
+                      className={`w-full text-left p-3 flex items-center gap-3 transition ${selected ? "bg-emerald-500/10" : "hover:bg-white/5"}`}
+                    >
+                      <span className={`w-5 h-5 rounded border flex items-center justify-center shrink-0 ${selected ? "bg-emerald-500 border-emerald-400 text-black" : "border-white/20"}`}>
+                        {selected && <i className="fa-solid fa-check text-[10px]"></i>}
+                      </span>
+                      <span className="min-w-0 flex-1">
+                        <span className="block text-sm text-white font-medium truncate">{movie.name}</span>
+                        <span className="block text-[11px] text-gray-500 truncate">{movie.slug}</span>
+                      </span>
+                      <span className="text-[11px] text-gray-400 shrink-0">{movie.quality || "?"} · {movie.year || "?"}</span>
+                    </button>
+                  );
+                }) : !isSearchingRefresh ? (
+                  <div className="text-xs text-gray-500 text-center p-5">Không tìm thấy phim phù hợp.</div>
+                ) : null}
+              </div>
+            )}
+          </div>
+
+          <div className="flex flex-col">
+            <div className="flex items-center justify-between mb-2">
+              <label className="text-xs text-gray-400">Danh sách sẽ cào lại</label>
+              {selectedRefreshMovies.length > 0 && (
+                <button type="button" onClick={() => setSelectedRefreshMovies([])} className="text-[11px] text-red-400 hover:text-red-300">
+                  Bỏ chọn tất cả
+                </button>
+              )}
+            </div>
+            <div className="min-h-32 max-h-52 overflow-y-auto rounded-xl border border-white/10 bg-black/30 p-2 custom-scrollbar">
+              {selectedRefreshMovies.length > 0 ? selectedRefreshMovies.map((movie) => (
+                <div key={movie.slug} className="flex items-center gap-2 px-2 py-2 rounded-lg hover:bg-white/5">
+                  <span className="text-xs text-white truncate flex-1">{movie.name}</span>
+                  <span className="text-[10px] text-gray-500 truncate max-w-40">{movie.slug}</span>
+                  <button type="button" onClick={() => toggleRefreshMovie(movie)} className="text-gray-500 hover:text-red-400 p-1">
+                    <i className="fa-solid fa-xmark"></i>
+                  </button>
+                </div>
+              )) : (
+                <div className="h-28 flex items-center justify-center text-xs text-gray-600">Chưa chọn phim nào.</div>
+              )}
+            </div>
+            <button
+              type="button"
+              onClick={handleRefreshSelected}
+              disabled={isRefreshingSelected || selectedRefreshMovies.length === 0 || isSyncRunning}
+              className="mt-3 bg-emerald-500 hover:bg-emerald-400 text-black font-bold py-3 px-5 rounded-xl transition flex items-center justify-center gap-2 text-sm disabled:opacity-40"
+            >
+              <i className={`fa-solid ${isRefreshingSelected ? "fa-spinner fa-spin" : "fa-arrows-rotate"}`}></i>
+              {isRefreshingSelected ? "Đang cào lại..." : `Cào Lại ${selectedRefreshMovies.length} Phim`}
+            </button>
+          </div>
+        </div>
+
+        {refreshResults.length > 0 && (
+          <div className="mt-5 border-t border-white/10 pt-4 space-y-2">
+            {refreshResults.map((result: any) => (
+              <div key={result.slug} className="flex flex-wrap items-center gap-2 text-xs bg-black/20 rounded-lg px-3 py-2">
+                <i className={`fa-solid ${result.success ? "fa-circle-check text-emerald-400" : "fa-circle-xmark text-red-400"}`}></i>
+                <span className="text-white font-medium mr-auto">{result.name}</span>
+                {result.sources?.map((item: any) => (
+                  <span key={item.source} className={`px-2 py-0.5 rounded ${item.status === "updated" ? "bg-emerald-500/15 text-emerald-300" : item.status === "not_found" ? "bg-white/5 text-gray-500" : "bg-red-500/15 text-red-300"}`}>
+                    {item.source.toUpperCase()}: {item.status === "updated" ? "OK" : item.status === "not_found" ? "không có" : "lỗi"}
+                  </span>
+                ))}
+              </div>
+            ))}
+          </div>
+        )}
       </div>
 
       {/* KHU VỰC 3: CÔNG CỤ GỘP PHIM THỦ CÔNG */}
