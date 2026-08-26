@@ -282,10 +282,12 @@ export async function getCatalog(req: Request, res: Response) {
     const minYear = req.query.min_year ? Number(req.query.min_year) : undefined;
     const maxYear = req.query.max_year ? Number(req.query.max_year) : undefined;
     const status = req.query.status as string;
+    const lang = ((req.query.lang as string) || "").toLowerCase();
+    const letter = ((req.query.letter as string) || "").toLowerCase();
     const sortField = (req.query.sort_field as string) || "updated_at";
     const sortType = (req.query.sort_type as string)?.toLowerCase() === "asc" ? "asc" : "desc";
 
-    const cacheKey = `catalog:${type || ''}:${slug || ''}:${page}:${limit}:${queryType || ''}:${categorySlug || ''}:${countrySlug || ''}:${year || ''}:${minYear || ''}:${maxYear || ''}:${status || ''}:${sortField}:${sortType}`;
+    const cacheKey = `catalog:${type || ''}:${slug || ''}:${page}:${limit}:${queryType || ''}:${categorySlug || ''}:${countrySlug || ''}:${year || ''}:${minYear || ''}:${maxYear || ''}:${status || ''}:${lang}:${letter}:${sortField}:${sortType}`;
     const cached = getCached(cacheKey);
     if (cached) {
       return res.json(cached);
@@ -342,6 +344,48 @@ export async function getCatalog(req: Request, res: Response) {
         where.status = "completed";
       } else if (status === "ongoing") {
         where.status = "ongoing";
+      }
+    }
+
+    // Lọc ngôn ngữ ở DB trước khi phân trang để tổng số trang luôn chính xác.
+    if (lang === "vietsub") {
+      where.lang = { contains: "Vietsub" };
+    } else if (lang === "thuyetminh") {
+      where.OR = [
+        { lang: { contains: "Thuyết Minh" } },
+        { lang: { contains: "Thuyết minh" } },
+      ];
+    } else if (lang === "longtieng") {
+      where.OR = [
+        { lang: { contains: "Lồng Tiếng" } },
+        { lang: { contains: "Lồng tiếng" } },
+      ];
+    }
+
+    // Lọc A-Z ở DB trước khi phân trang. Bao gồm các chữ cái tiếng Việt phổ biến.
+    if (letter && letter !== "all") {
+      const letterVariants: Record<string, string[]> = {
+        a: ["a", "A", "á", "Á", "à", "À", "ả", "Ả", "ã", "Ã", "ạ", "Ạ", "ă", "Ă", "ắ", "Ắ", "ằ", "Ằ", "ẳ", "Ẳ", "ẵ", "Ẵ", "ặ", "Ặ", "â", "Â", "ấ", "Ấ", "ầ", "Ầ", "ẩ", "Ẩ", "ẫ", "Ẫ", "ậ", "Ậ"],
+        d: ["d", "D", "đ", "Đ"],
+        e: ["e", "E", "é", "É", "è", "È", "ẻ", "Ẻ", "ẽ", "Ẽ", "ẹ", "Ẹ", "ê", "Ê", "ế", "Ế", "ề", "Ề", "ể", "Ể", "ễ", "Ễ", "ệ", "Ệ"],
+        i: ["i", "I", "í", "Í", "ì", "Ì", "ỉ", "Ỉ", "ĩ", "Ĩ", "ị", "Ị"],
+        o: ["o", "O", "ó", "Ó", "ò", "Ò", "ỏ", "Ỏ", "õ", "Õ", "ọ", "Ọ", "ô", "Ô", "ố", "Ố", "ồ", "Ồ", "ổ", "Ổ", "ỗ", "Ỗ", "ộ", "Ộ", "ơ", "Ơ", "ớ", "Ớ", "ờ", "Ờ", "ở", "Ở", "ỡ", "Ỡ", "ợ", "Ợ"],
+        u: ["u", "U", "ú", "Ú", "ù", "Ù", "ủ", "Ủ", "ũ", "Ũ", "ụ", "Ụ", "ư", "Ư", "ứ", "Ứ", "ừ", "Ừ", "ử", "Ử", "ữ", "Ữ", "ự", "Ự"],
+        y: ["y", "Y", "ý", "Ý", "ỳ", "Ỳ", "ỷ", "Ỷ", "ỹ", "Ỹ", "ỵ", "Ỵ"],
+      };
+      const asciiLetters = "abcdefghijklmnopqrstuvwxyz".split("");
+      const allLetterStarts = asciiLetters.flatMap((char) =>
+        letterVariants[char] || [char, char.toUpperCase()],
+      );
+
+      if (letter === "#") {
+        where.NOT = {
+          OR: allLetterStarts.map((prefix) => ({ name: { startsWith: prefix } })),
+        };
+      } else if (/^[a-z]$/.test(letter)) {
+        const prefixes = letterVariants[letter] || [letter, letter.toUpperCase()];
+        const letterCondition = prefixes.map((prefix) => ({ name: { startsWith: prefix } }));
+        where.AND = [...(Array.isArray(where.AND) ? where.AND : []), { OR: letterCondition }];
       }
     }
 

@@ -248,7 +248,8 @@ export function useMovieCatalog({ baseApiUrl, itemsPerPage = 32, slug, initialDa
                     apiUrl = `${INTERNAL_API_URL}/quoc-gia/${country}`;
                     if (year) params.set("year", year);
                 } else if (year) {
-                    apiUrl = `${INTERNAL_API_URL}/movies?year=${year}`;
+                    apiUrl = `${INTERNAL_API_URL}/movies`;
+                    params.set("year", year);
                 } else {
                     // Default Page: Use baseApiUrl (usually phim-moi-cap-nhat)
                     apiUrl = baseApiUrl;
@@ -269,6 +270,9 @@ export function useMovieCatalog({ baseApiUrl, itemsPerPage = 32, slug, initialDa
                     params.set("sort_field", sortMap[sort] || "modified.time");
                     params.set("sort_type", sortType || "desc");
                 }
+                if (status) params.set("status", status);
+                if (lang) params.set("lang", lang);
+                if (letter && letter !== "all") params.set("letter", letter);
 
                 // 3. Special Case: Handle redirects if we are on a slug-specific page 
                 if (slug) {
@@ -313,7 +317,7 @@ export function useMovieCatalog({ baseApiUrl, itemsPerPage = 32, slug, initialDa
                     title = res.data.data?.titlePage || res.data.data?.seoOnpage?.title_page || res.data.data?.seoOnpage?.title || res.data.titlePage || "";
                 }
 
-                // 4. Secondary Client-side Filter
+                // 4. Defensive type check. All other filters run in the backend before pagination.
                 if (items.length > 0) {
                     // Filter by Type
                     if (activeFilters.type) {
@@ -325,51 +329,6 @@ export function useMovieCatalog({ baseApiUrl, itemsPerPage = 32, slug, initialDa
                         });
                     }
 
-                    // Filter by Status
-                    if (status) {
-                        items = items.filter(movie => {
-                            const isCompleted = movie.episode_current?.toLowerCase().includes("hoàn tất") || 
-                                                movie.episode_current?.toLowerCase().includes("full") || 
-                                                movie.status === "completed";
-                            if (status === "completed") return isCompleted;
-                            if (status === "ongoing") return !isCompleted;
-                            return true;
-                        });
-                    }
-
-                    // Filter by Language
-                    if (lang) {
-                        items = items.filter(movie => {
-                            const mLang = (movie.lang || "").toLowerCase();
-                            const mLangKeys = (movie as any).lang_key || [];
-                            
-                            if (lang === "vietsub") {
-                                return mLang.includes("vietsub") || mLangKeys.includes("vs");
-                            }
-                            if (lang === "thuyetminh") {
-                                return mLang.includes("thuyết minh") || mLangKeys.includes("tm");
-                            }
-                            if (lang === "longtieng") {
-                                return mLang.includes("lồng tiếng") || mLangKeys.includes("lt");
-                            }
-                            return true;
-                        });
-                    }
-
-                    // Filter by Letter (A-Z)
-                    if (letter && letter !== "all") {
-                        const targetLetter = letter.toUpperCase();
-                        const removeAccentsLocal = (str: string) => {
-                            return str.normalize("NFD").replace(/[\u0300-\u036f]/g, "").replace(/đ/g, "d").replace(/Đ/g, "D");
-                        };
-                        items = items.filter(movie => {
-                            const firstChar = removeAccentsLocal(movie.name || "").trim().charAt(0).toUpperCase();
-                            if (targetLetter === "#") {
-                                return !/^[A-Z]$/.test(firstChar);
-                            }
-                            return firstChar === targetLetter;
-                        });
-                    }
                 }
 
                 if (isMounted) {

@@ -324,12 +324,23 @@ export async function upsertMovieDetail(
       normalizedCats.push({ name: "Hoạt Hình", slug: "hoat-hinh" });
     }
 
-    for (const cat of normalizedCats) {
-      const categoryRecord = await prisma.category.findUnique({
-        where: { slug: cat.slug },
-      });
+    const categoryRecords = await prisma.category.findMany({
+      where: { slug: { in: normalizedCats.map((cat) => cat.slug) } },
+      select: { id: true },
+    });
 
-      if (!categoryRecord) continue; // Tuyệt đối không tự tạo slug rác
+    // KKPhim là nguồn metadata chính. Thay thế taxonomy của nguồn này để quan hệ cũ
+    // không tồn tại vĩnh viễn; các nguồn phụ chỉ được phép bổ sung quan hệ hợp lệ.
+    if (sourcePrefix === "KK" && Array.isArray(m.category) && m.category.length > 0) {
+      await prisma.movieCategory.deleteMany({
+        where: {
+          movie_id: targetMovieId,
+          category_id: { notIn: categoryRecords.map((record) => record.id) },
+        },
+      });
+    }
+
+    for (const categoryRecord of categoryRecords) {
 
       await prisma.movieCategory.upsert({
         where: {
@@ -348,12 +359,21 @@ export async function upsertMovieDetail(
 
     // 3. Đồng bộ Quốc gia (MovieCountry) theo danh mục chuẩn LoFilm
     const normalizedCountries = normalizeCountries(m.country || []);
-    for (const country of normalizedCountries) {
-      const countryRecord = await prisma.country.findUnique({
-        where: { slug: country.slug },
-      });
+    const countryRecords = await prisma.country.findMany({
+      where: { slug: { in: normalizedCountries.map((country) => country.slug) } },
+      select: { id: true },
+    });
 
-      if (!countryRecord) continue; // Tuyệt đối không tự tạo slug rác
+    if (sourcePrefix === "KK" && Array.isArray(m.country) && m.country.length > 0) {
+      await prisma.movieCountry.deleteMany({
+        where: {
+          movie_id: targetMovieId,
+          country_id: { notIn: countryRecords.map((record) => record.id) },
+        },
+      });
+    }
+
+    for (const countryRecord of countryRecords) {
 
       await prisma.movieCountry.upsert({
         where: {

@@ -346,7 +346,8 @@ const COUNTRY_MAP: Record<string, TaxonomyItem> = {
   // Âu Mỹ
   "au-my": { name: "Âu Mỹ", slug: "au-my" },
   "au my": { name: "Âu Mỹ", slug: "au-my" },
-  "my": { name: "Âu Mỹ", slug: "au-my" },
+  // ISO 3166-1 alpha-2: MY is Malaysia. Do not confuse it with Vietnamese "Mỹ".
+  "my": { name: "Malaysia", slug: "malaysia" },
   "us": { name: "Âu Mỹ", slug: "au-my" },
   "usa": { name: "Âu Mỹ", slug: "au-my" },
   "united-states": { name: "Âu Mỹ", slug: "au-my" },
