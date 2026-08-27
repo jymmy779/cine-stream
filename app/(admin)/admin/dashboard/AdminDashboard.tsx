@@ -94,11 +94,11 @@ export default function AdminDashboard({ initialStats, initialSettings, initialS
     const handleClearSystemCache = async () => {
         setIsClearingCache(true);
         try {
-            const res = await fetch("/api/admin/cache/flush", { method: "POST" });
+            const res = await fetch("/api/admin/flush-cache", { method: "POST" });
             if (res.ok) {
                 toast.success("Đã làm mới toàn bộ bộ nhớ Cache hệ thống!");
             } else {
-                toast.success("Đã gửi tín hiệu làm mới Cache.");
+                toast.error("Không thể làm mới Cache hệ thống.");
             }
         } catch {
             toast.error("Lỗi khi kết nối xóa Cache");
