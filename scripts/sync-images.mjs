@@ -17,6 +17,7 @@
  *   node scripts/sync-images.mjs --source=public-apis               # Bắt buộc lấy danh sách từ 3 API công cộng
  *   node scripts/sync-images.mjs --export-queue=/tmp/movies.json    # Chỉ xuất queue JSON, không xử lý ảnh/R2
  *   node scripts/sync-images.mjs --input-file=movies.json           # Xử lý queue JSON đã xuất
+ *   node scripts/sync-images.mjs --input-file=movies.json --image-source=kkphim # Chỉ xử lý phân vùng KKPhim
  *   node scripts/sync-images.mjs --input-file=movies.json --dry-run # Kiểm tra queue, không gọi R2
  *
  * Full sync ~56k phim (3 nguồn, nhanh nhất):
@@ -112,6 +113,12 @@ const pageArg           = args.find(a => a.startsWith('--page='));
 const maxPagesArg       = args.find(a => a.startsWith('--max-pages='));
 const startPageArg      = args.find(a => a.startsWith('--start-page='));
 const pageConcurrencyArg = args.find(a => a.startsWith('--page-concurrency='));
+const imageSourceArg     = args.find(a => a.startsWith('--image-source='));
+const imageSource        = imageSourceArg ? imageSourceArg.split('=')[1].toLowerCase() : null;
+if (imageSource && !['kkphim', 'vsmov', 'nguonc'].includes(imageSource)) {
+    console.error(`[ERROR] --image-source không hợp lệ: ${imageSource}. Dùng kkphim, vsmov hoặc nguonc.`);
+    process.exit(1);
+}
 
 // File Checkpoint & Failed Logs
 const STATE_FILE  = resolve(__dirname, 'sync-state.json');
@@ -403,7 +410,8 @@ async function processMovieImages(movie, idx, total) {
     try {
         if (!movie || !movie.slug) return;
         const slug = String(movie.slug);
-        const { poster_url, thumb_url } = movie;
+        const sourceMovie = await fetchSourceMovieImages(movie);
+        const { poster_url, thumb_url } = sourceMovie;
 
         const posterKey = `images/movies/${slug}-poster.webp`;
         const thumbKey  = `images/movies/${slug}-thumb.webp`;
@@ -473,6 +481,55 @@ async function processMovieImages(movie, idx, total) {
     } catch (outerErr) {
         console.error(`\n  ✗ Bỏ qua phim lỗi không xác định [${movie?.slug || idx}]:`, outerErr.message);
     }
+}
+
+/**
+ * Lấy ảnh detail bằng slug riêng của nguồn nhưng vẫn upload theo slug chuẩn của DB.
+ * VS/NguonC trả tên field ngược quy ước giao diện nên được đảo tại đây.
+ */
+async function fetchSourceMovieImages(movie) {
+    if (!imageSource) return movie;
+
+    const sourceSlug = movie.source_slug || movie.source_slugs?.[imageSource];
+    if (!sourceSlug) throw new Error(`Phim ${movie.slug} không có source_slug cho ${imageSource}`);
+
+    const configs = {
+        kkphim: {
+            url: `https://phimapi.com/v1/api/phim/${encodeURIComponent(sourceSlug)}`,
+            read: data => data?.movie || data?.data?.item || data?.item,
+            reverse: false,
+        },
+        vsmov: {
+            url: `https://vsmov.com/api/phim/${encodeURIComponent(sourceSlug)}`,
+            read: data => data?.movie || data?.data?.movie || data?.data?.item,
+            reverse: true,
+        },
+        nguonc: {
+            url: `https://phim.nguonc.com/api/film/${encodeURIComponent(sourceSlug)}`,
+            read: data => data?.movie || data?.data?.movie || data?.data?.item,
+            reverse: true,
+        },
+    };
+    const config = configs[imageSource];
+    const response = await withRetry(async () => {
+        const res = await fetch(config.url, {
+            headers: { Accept: 'application/json', 'User-Agent': 'Mozilla/5.0' },
+            signal: AbortSignal.timeout(imageSource === 'nguonc' ? 30000 : 15000),
+        });
+        if (!res.ok) throw new Error(`HTTP ${res.status}`);
+        return res.json();
+    }, imageSource === 'nguonc' ? 5 : 3, 1000);
+
+    const detail = config.read(response);
+    if (!detail) throw new Error(`${imageSource} không trả dữ liệu detail cho ${sourceSlug}`);
+    const rawPoster = typeof detail.poster_url === 'string' ? detail.poster_url.trim() : '';
+    const rawThumb = typeof detail.thumb_url === 'string' ? detail.thumb_url.trim() : '';
+
+    return {
+        ...movie,
+        poster_url: config.reverse ? (rawThumb || rawPoster) : (rawPoster || rawThumb),
+        thumb_url: config.reverse ? (rawPoster || rawThumb) : (rawThumb || rawPoster),
+    };
 }
 
 // ─── Process ảnh diễn viên cho 1 phim ─────────────────────────────────────────
@@ -581,8 +638,11 @@ async function fetchAllMovies() {
         }
 
         const validItems = inputItems.filter(item => item && typeof item.slug === 'string' && item.slug.trim());
-        const limitedItems = LIMIT === Infinity ? validItems : validItems.slice(0, LIMIT);
-        console.log(`📦 [Queue Input] Đã tải ${limitedItems.length}/${validItems.length} phim từ ${inputFilePath}`);
+        const sourceItems = imageSource
+            ? validItems.filter(item => item.image_source === imageSource && (item.source_slug || item.source_slugs?.[imageSource]))
+            : validItems;
+        const limitedItems = LIMIT === Infinity ? sourceItems : sourceItems.slice(0, LIMIT);
+        console.log(`📦 [Queue Input] Đã tải ${limitedItems.length}/${sourceItems.length} phim${imageSource ? ` thuộc ${imageSource}` : ''} từ ${inputFilePath}`);
         return limitedItems;
     }
 
@@ -619,6 +679,9 @@ async function fetchAllMovies() {
                     thumb_url: true,
                     tmdb_id: true,
                     tmdb_type: true,
+                    episodes: {
+                        select: { server_name: true, source_slug: true },
+                    },
                 },
                 take: LIMIT === Infinity ? undefined : LIMIT,
                 orderBy: { updated_at: 'desc' }
@@ -627,13 +690,35 @@ async function fetchAllMovies() {
             await prisma.$disconnect();
             console.log(`✅ [Database] Đã tải thành công ${dbMovies.length} phim từ Database.`);
 
-            return dbMovies.map(m => ({
-                name: m.name,
-                slug: m.slug,
-                poster_url: m.poster_url,
-                thumb_url: m.thumb_url,
-                tmdb: { id: m.tmdb_id || '', type: m.tmdb_type || 'movie' }
-            }));
+            return dbMovies.map(m => {
+                const sourceSlugs = {};
+                for (const server of m.episodes) {
+                    if (!server.source_slug) continue;
+                    if (/\sKK$/i.test(server.server_name)) sourceSlugs.kkphim ||= server.source_slug;
+                    if (/\sVS$/i.test(server.server_name)) sourceSlugs.vsmov ||= server.source_slug;
+                    if (/\sNC$/i.test(server.server_name)) sourceSlugs.nguonc ||= server.source_slug;
+                }
+
+                // Phân vùng loại trừ nhau để ba runner không ghi đồng thời cùng R2 key.
+                const selectedSource = sourceSlugs.kkphim
+                    ? 'kkphim'
+                    : sourceSlugs.vsmov
+                        ? 'vsmov'
+                        : sourceSlugs.nguonc
+                            ? 'nguonc'
+                            : null;
+
+                return {
+                    name: m.name,
+                    slug: m.slug,
+                    poster_url: m.poster_url,
+                    thumb_url: m.thumb_url,
+                    tmdb: { id: m.tmdb_id || '', type: m.tmdb_type || 'movie' },
+                    image_source: selectedSource,
+                    source_slug: selectedSource ? sourceSlugs[selectedSource] : null,
+                    source_slugs: sourceSlugs,
+                };
+            }).filter(movie => movie.image_source);
         }
     } catch (dbErr) {
         console.warn('⚠️ [Database] Không thể đọc trực tiếp từ DB, chuyển sang quét API:', dbErr.message);
@@ -989,6 +1074,7 @@ async function main() {
     console.log(`  Resume: ${resumeMode}`);
     console.log(`  Public API only: ${publicApiOnly}`);
     console.log(`  Source: ${inputFilePath ? 'queue-file' : sourceMode}`);
+    console.log(`  Image source: ${imageSource || 'all'}`);
     console.log(`  Export queue: ${exportQueuePath || 'false'}`);
     console.log(`  Dry-run: ${dryRun}`);
     console.log(`  Limit: ${LIMIT === Infinity ? 'unlimited' : LIMIT} phim`);

@@ -14,7 +14,6 @@ on:
         options:
           - database-recent
           - database-full
-          - public-apis
       content:
         description: "Loại ảnh cần đồng bộ"
         required: true
@@ -29,21 +28,21 @@ on:
         required: true
         default: "750"
         type: string
-      max_pages:
-        description: "Số trang mỗi nguồn (chỉ dùng cho public-apis)"
-        required: true
-        default: "15"
-        type: string
       page_concurrency:
         description: "Số trang API tải song song"
         required: true
         default: "3"
         type: string
+      overwrite_existing:
+        description: "Ghi đè ảnh R2 hiện có (bật khi sửa ảnh poster/thumb bị ngược)"
+        required: true
+        default: false
+        type: boolean
 
 jobs:
-  sync:
+  export-queue:
     runs-on: ubuntu-latest
-    timeout-minutes: 360
+    timeout-minutes: 30
 
     steps:
       - name: Checkout repository
@@ -73,7 +72,6 @@ jobs:
           SERVER_PASSWORD: ${{ secrets.SERVER_PASSWORD }}
           SYNC_MODE: ${{ github.event.inputs.mode || 'database-recent' }}
           DB_LIMIT: ${{ github.event.inputs.limit || '750' }}
-          MAX_PAGES: ${{ github.event.inputs.max_pages || '15' }}
           PAGE_CONCURRENCY: ${{ github.event.inputs.page_concurrency || '3' }}
         run: |
           set -euo pipefail
@@ -84,10 +82,6 @@ jobs:
           fi
           if [[ ! "$DB_LIMIT" =~ ^[1-9][0-9]*$ ]]; then
             echo "limit phải là số nguyên dương."
-            exit 1
-          fi
-          if [[ ! "$MAX_PAGES" =~ ^[1-9][0-9]*$ ]]; then
-            echo "max_pages phải là số nguyên dương."
             exit 1
           fi
           if [[ ! "$PAGE_CONCURRENCY" =~ ^[1-9][0-9]*$ ]]; then
@@ -101,9 +95,6 @@ jobs:
               ;;
             database-full)
               REMOTE_ARGS="--source=database"
-              ;;
-            public-apis)
-              REMOTE_ARGS="--source=public-apis --max-pages=$MAX_PAGES --page-concurrency=$PAGE_CONCURRENCY"
               ;;
             *)
               echo "Mode không hợp lệ: $SYNC_MODE"
@@ -135,7 +126,42 @@ jobs:
 
           node -e "const fs=require('fs'); const q=JSON.parse(fs.readFileSync('.sync-input/movies.json','utf8')); if(!Array.isArray(q.items)) throw new Error('Queue JSON không hợp lệ'); console.log('Queue nhận từ VPS:', q.count, 'phim; source:', q.source);"
 
-      - name: Run image sync on GitHub runner
+      - name: Upload movie queue
+        uses: actions/upload-artifact@v4
+        with:
+          name: image-sync-queue
+          path: .sync-input/movies.json
+          retention-days: 1
+
+  sync:
+    needs: export-queue
+    runs-on: ubuntu-latest
+    timeout-minutes: 350
+    strategy:
+      fail-fast: false
+      matrix:
+        image_source: [kkphim, vsmov, nguonc]
+
+    steps:
+      - name: Checkout repository
+        uses: actions/checkout@v4
+
+      - name: Setup Node.js
+        uses: actions/setup-node@v4
+        with:
+          node-version: "22"
+          cache: npm
+
+      - name: Install dependencies
+        run: npm ci || npm install
+
+      - name: Download movie queue
+        uses: actions/download-artifact@v4
+        with:
+          name: image-sync-queue
+          path: .sync-input
+
+      - name: Run ${{ matrix.image_source }} image sync
         shell: bash
         env:
           R2_ACCOUNT_ID: ${{ secrets.R2_ACCOUNT_ID }}
@@ -144,6 +170,7 @@ jobs:
           R2_BUCKET_NAME: ${{ secrets.R2_BUCKET_NAME }}
           SYNC_CONTENT: ${{ github.event.inputs.content || 'all' }}
           PAGE_CONCURRENCY: ${{ github.event.inputs.page_concurrency || '3' }}
+          OVERWRITE_EXISTING: ${{ github.event.inputs.overwrite_existing || 'false' }}
         run: |
           set -euo pipefail
 
@@ -163,8 +190,15 @@ jobs:
               ;;
           esac
 
+          if [[ "$OVERWRITE_EXISTING" == "true" ]]; then
+            R2_ARGS=()
+          else
+            R2_ARGS=(--new-only)
+          fi
+
           node scripts/sync-images.mjs \
             --input-file=.sync-input/movies.json \
-            --new-only \
+            --image-source="${{ matrix.image_source }}" \
             --page-concurrency="$PAGE_CONCURRENCY" \
+            "${R2_ARGS[@]}" \
             "${CONTENT_ARGS[@]}"
