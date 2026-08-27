@@ -286,14 +286,30 @@ export async function getCatalog(req: Request, res: Response) {
     const letter = ((req.query.letter as string) || "").toLowerCase();
     const sortField = (req.query.sort_field as string) || "updated_at";
     const sortType = (req.query.sort_type as string)?.toLowerCase() === "asc" ? "asc" : "desc";
+    const excludeTrailer = String(req.query.exclude_trailer || "").toLowerCase() === "true";
 
-    const cacheKey = `catalog:${type || ''}:${slug || ''}:${page}:${limit}:${queryType || ''}:${categorySlug || ''}:${countrySlug || ''}:${year || ''}:${minYear || ''}:${maxYear || ''}:${status || ''}:${lang}:${letter}:${sortField}:${sortType}`;
+    const cacheKey = `catalog:${type || ''}:${slug || ''}:${page}:${limit}:${queryType || ''}:${categorySlug || ''}:${countrySlug || ''}:${year || ''}:${minYear || ''}:${maxYear || ''}:${status || ''}:${lang}:${letter}:${sortField}:${sortType}:${excludeTrailer}`;
     const cached = getCached(cacheKey);
     if (cached) {
       return res.json(cached);
     }
 
     const where: Prisma.MovieWhereInput = {};
+
+    if (excludeTrailer) {
+      where.AND = [{
+        NOT: {
+          OR: [
+            { status: { contains: "trailer" } },
+            { status: { contains: "Trailer" } },
+            { episode_current: { contains: "trailer" } },
+            { episode_current: { contains: "Trailer" } },
+            { quality: { contains: "trailer" } },
+            { quality: { contains: "Trailer" } },
+          ],
+        },
+      }];
+    }
 
     // Lọc theo Type
     if (queryType) {

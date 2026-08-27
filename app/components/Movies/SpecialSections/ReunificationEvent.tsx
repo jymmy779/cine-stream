@@ -37,7 +37,7 @@ export default function ReunificationEvent() {
         try {
             setIsLoading(true);
             // Fetch 6 phim mới nhất từ quốc gia Việt Nam qua internal proxy
-            const res = await axios.get(`/api/proxy?url=${encodeURIComponent(`${INTERNAL_API_URL}/quoc-gia/viet-nam?limit=6`)}&revalidate=3600`);
+            const res = await axios.get(`/api/proxy?url=${encodeURIComponent(`${INTERNAL_API_URL}/quoc-gia/viet-nam?limit=6&exclude_trailer=true`)}&revalidate=3600`);
 
             if (res.data?.status === "success" || res.data?.status === true) {
                 const items = res.data.data?.items || res.data.items || [];

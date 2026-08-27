@@ -2,6 +2,8 @@ import type { Movie } from "@/app/types/movie";
 import type { HomeCategory, HomePrefetch } from "@/app/types/home-prefetch";
 import {
     filterDuplicateMovies,
+    excludeTrailerMovies,
+    isTrailerMovie,
     sortAndSlicePosterRowMovies,
 } from "@/app/utils/movieUtils";
 
@@ -63,15 +65,15 @@ function parseCategories(payload: unknown): HomeCategory[] {
 }
 
 function mapFeatured(items: Movie[]): Movie[] {
-    return filterDuplicateMovies(items).slice(0, 10);
+    return filterDuplicateMovies(excludeTrailerMovies(items)).slice(0, 10);
 }
 
 function mapTop(items: Movie[]): Movie[] {
-    return filterDuplicateMovies(items).slice(0, 30);
+    return filterDuplicateMovies(excludeTrailerMovies(items)).slice(0, 30);
 }
 
 function mapMovieRow(items: Movie[]): Movie[] {
-    return sortAndSlicePosterRowMovies(items);
+    return sortAndSlicePosterRowMovies(excludeTrailerMovies(items));
 }
 
 /**
@@ -83,7 +85,7 @@ async function fetchFeatured(url: string, limit: number = 10): Promise<Movie[]> 
         const items = parseV1Items(res);
         if (items.length === 0) return [];
 
-        return filterDuplicateMovies(items).slice(0, limit);
+        return filterDuplicateMovies(excludeTrailerMovies(items)).slice(0, limit);
     } catch (error) {
         console.error(`Lỗi prefetch featured slider từ ${url}:`, error);
         return [];
@@ -99,7 +101,7 @@ async function fetchTop(url: string, limit: number = 30): Promise<Movie[]> {
         const items = parseV1Items(res);
         if (items.length === 0) return [];
 
-        return filterDuplicateMovies(items).slice(0, limit);
+        return filterDuplicateMovies(excludeTrailerMovies(items)).slice(0, limit);
     } catch (error) {
         console.error(`Lỗi prefetch top row từ ${url}:`, error);
         return [];
@@ -112,12 +114,8 @@ async function mapHero(payload: unknown): Promise<Movie[]> {
 
     // 1. Lọc bỏ Trailer và phim có năm ảo trong tương lai xa (ví dụ: 2030, 2035)
     const validMovies = raw.filter((m) => {
-        const cur = (m.episode_current || "").toLowerCase().trim();
-        const qual = (m.quality || "").toLowerCase().trim();
-        const stat = (m.status || "").toLowerCase().trim();
-        const isTrailer = cur.includes("trailer") || qual.includes("trailer") || stat.includes("trailer");
         const isFutureGhostYear = typeof m.year === "number" && m.year > currentYear + 1;
-        return !isTrailer && !isFutureGhostYear;
+        return !isTrailerMovie(m) && !isFutureGhostYear;
     });
 
     // 2. Lọc trùng lặp thương hiệu/nhiều phần (Phần 1, Phần 2, SS1, SS2...) và lấy 8 phim đầu
@@ -296,23 +294,23 @@ function getHeroUrl() {
     const currentYear = new Date().getFullYear();
     const heroMinYear = currentYear - 1; // Tự động lấy phim từ năm hiện tại và năm liền trước (VD: 2025 - 2026, sang 2027 tự động thành 2026 - 2027)
     const heroMaxYear = currentYear + 1; // Chặn các năm tương lai ảo như 2030, 2035
-    return `${INTERNAL_API_URL}/danh-sach/phim-moi-cap-nhat?min_year=${heroMinYear}&max_year=${heroMaxYear}&limit=60`;
+    return `${INTERNAL_API_URL}/danh-sach/phim-moi-cap-nhat?min_year=${heroMinYear}&max_year=${heroMaxYear}&exclude_trailer=true&limit=60`;
 }
 
 const URLS = {
     categories: `${INTERNAL_API_URL}/the-loai`,
-    movieRowHan: `${INTERNAL_API_URL}/quoc-gia/han-quoc?limit=60`,
-    movieRowTrung: `${INTERNAL_API_URL}/quoc-gia/trung-quoc?limit=60`,
-    movieRowAuMy: `${INTERNAL_API_URL}/quoc-gia/au-my?limit=60`,
-    featuredTv: `${INTERNAL_API_URL}/danh-sach/tv-shows?limit=60`,
-    posterChieuRap: `${INTERNAL_API_URL}/danh-sach/phim-chieu-rap?limit=60`,
-    posterPhimBo: `${INTERNAL_API_URL}/danh-sach/phim-bo?limit=60`,
-    topPhimLe: `${INTERNAL_API_URL}/danh-sach/phim-le?limit=60`,
-    topPhimBo: `${INTERNAL_API_URL}/danh-sach/phim-bo?limit=60`,
-    featuredAnime: `${INTERNAL_API_URL}/danh-sach/hoat-hinh?country=nhat-ban&limit=60`,
-    posterKinhDi: `${INTERNAL_API_URL}/the-loai/kinh-di?limit=60`,
-    posterHoatHinh: `${INTERNAL_API_URL}/danh-sach/hoat-hinh?limit=60`,
-    phimNgan: `${INTERNAL_API_URL}/the-loai/phim-ngan?limit=60`,
+    movieRowHan: `${INTERNAL_API_URL}/quoc-gia/han-quoc?exclude_trailer=true&limit=60`,
+    movieRowTrung: `${INTERNAL_API_URL}/quoc-gia/trung-quoc?exclude_trailer=true&limit=60`,
+    movieRowAuMy: `${INTERNAL_API_URL}/quoc-gia/au-my?exclude_trailer=true&limit=60`,
+    featuredTv: `${INTERNAL_API_URL}/danh-sach/tv-shows?exclude_trailer=true&limit=60`,
+    posterChieuRap: `${INTERNAL_API_URL}/danh-sach/phim-chieu-rap?exclude_trailer=true&limit=60`,
+    posterPhimBo: `${INTERNAL_API_URL}/danh-sach/phim-bo?exclude_trailer=true&limit=60`,
+    topPhimLe: `${INTERNAL_API_URL}/danh-sach/phim-le?exclude_trailer=true&limit=60`,
+    topPhimBo: `${INTERNAL_API_URL}/danh-sach/phim-bo?exclude_trailer=true&limit=60`,
+    featuredAnime: `${INTERNAL_API_URL}/danh-sach/hoat-hinh?country=nhat-ban&exclude_trailer=true&limit=60`,
+    posterKinhDi: `${INTERNAL_API_URL}/the-loai/kinh-di?exclude_trailer=true&limit=60`,
+    posterHoatHinh: `${INTERNAL_API_URL}/danh-sach/hoat-hinh?exclude_trailer=true&limit=60`,
+    phimNgan: `${INTERNAL_API_URL}/the-loai/phim-ngan?exclude_trailer=true&limit=60`,
 } as const;
 
 async function mapNominated(): Promise<Movie[]> {
@@ -323,7 +321,7 @@ async function mapNominated(): Promise<Movie[]> {
         try {
             const cached = await redis.get(NOMINATED_KEY);
             if (cached) {
-                return JSON.parse(cached);
+                return excludeTrailerMovies(JSON.parse(cached));
             }
         } catch (err) {
             console.error("[Redis Nominated Cache Error]", err);
@@ -411,7 +409,7 @@ async function mapNominated(): Promise<Movie[]> {
         })
     );
 
-    const result = movies.filter(Boolean) as Movie[];
+    const result = excludeTrailerMovies(movies.filter(Boolean) as Movie[]);
 
     // 3. Lưu cache riêng 24h
     if (redis && redis.status === 'ready' && result.length > 0) {
@@ -559,7 +557,7 @@ async function fetchAndCacheBundle(
     }
 
     // Giữ nguyên số lượng = 8
-    finalHero = finalHero.slice(0, 8);
+    finalHero = excludeTrailerMovies(finalHero).slice(0, 8);
 
     // Tự động kéo Logo PNG trong suốt từ TMDB cho 8 phim Hero Slider
     const heroWithLogos = await Promise.all(

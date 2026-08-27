@@ -51,7 +51,7 @@ function RandomMovieRow() {
         }
 
         try {
-            const url = `/api/proxy?url=${encodeURIComponent(`${INTERNAL_API_URL}/the-loai/${moodId}?page=1&limit=40`)}&revalidate=86400`;
+            const url = `/api/proxy?url=${encodeURIComponent(`${INTERNAL_API_URL}/the-loai/${moodId}?page=1&limit=40&exclude_trailer=true`)}&revalidate=86400`;
             const res = await axios.get(url);
             const items = res.data?.data?.items || res.data?.items || [];
             const unique = filterDuplicateMovies(items);

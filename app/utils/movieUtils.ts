@@ -146,6 +146,16 @@ export function filterDuplicateMovies(movies: Movie[]): Movie[] {
     });
 }
 
+/** Nhận diện phim mới chỉ có trailer, dùng chung cho các section trang Home. */
+export function isTrailerMovie(movie: Movie): boolean {
+    return [movie.status, movie.episode_current, movie.quality]
+        .some((value) => String(value || "").toLowerCase().includes("trailer"));
+}
+
+export function excludeTrailerMovies(movies: Movie[]): Movie[] {
+    return movies.filter((movie) => !isTrailerMovie(movie));
+}
+
 /**
  * Giống logic MoviePosterRow: lọc trùng → sort theo năm / modified → tối đa 20 phim
  */
