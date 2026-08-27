@@ -18,6 +18,7 @@
  *   node scripts/sync-images.mjs --export-queue=/tmp/movies.json    # Chỉ xuất queue JSON, không xử lý ảnh/R2
  *   node scripts/sync-images.mjs --input-file=movies.json           # Xử lý queue JSON đã xuất
  *   node scripts/sync-images.mjs --input-file=movies.json --image-source=kkphim # Chỉ xử lý phân vùng KKPhim
+ *   node scripts/sync-images.mjs --input-file=movies.json --shard=0 --shard-count=3 # Xử lý 1/3 queue DB
  *   node scripts/sync-images.mjs --input-file=movies.json --dry-run # Kiểm tra queue, không gọi R2
  *
  * Full sync ~56k phim (3 nguồn, nhanh nhất):
@@ -117,6 +118,17 @@ const imageSourceArg     = args.find(a => a.startsWith('--image-source='));
 const imageSource        = imageSourceArg ? imageSourceArg.split('=')[1].toLowerCase() : null;
 if (imageSource && !['kkphim', 'vsmov', 'nguonc'].includes(imageSource)) {
     console.error(`[ERROR] --image-source không hợp lệ: ${imageSource}. Dùng kkphim, vsmov hoặc nguonc.`);
+    process.exit(1);
+}
+const shardArg           = args.find(a => a.startsWith('--shard='));
+const shardCountArg      = args.find(a => a.startsWith('--shard-count='));
+const shardIndex         = shardArg ? Number(shardArg.split('=')[1]) : null;
+const shardCount         = shardCountArg ? Number(shardCountArg.split('=')[1]) : null;
+if ((shardIndex !== null || shardCount !== null) && (
+    !Number.isInteger(shardIndex) || !Number.isInteger(shardCount) ||
+    shardCount < 1 || shardIndex < 0 || shardIndex >= shardCount
+)) {
+    console.error('[ERROR] --shard và --shard-count không hợp lệ. Yêu cầu: 0 <= shard < shard-count.');
     process.exit(1);
 }
 
@@ -639,8 +651,12 @@ async function fetchAllMovies() {
         const sourceItems = imageSource
             ? validItems.filter(item => item.image_source === imageSource && (item.source_slug || item.source_slugs?.[imageSource]))
             : validItems;
-        const limitedItems = LIMIT === Infinity ? sourceItems : sourceItems.slice(0, LIMIT);
-        console.log(`📦 [Queue Input] Đã tải ${limitedItems.length}/${sourceItems.length} phim${imageSource ? ` thuộc ${imageSource}` : ''} từ ${inputFilePath}`);
+        const shardedItems = shardIndex === null
+            ? sourceItems
+            : sourceItems.filter((_, index) => index % shardCount === shardIndex);
+        const limitedItems = LIMIT === Infinity ? shardedItems : shardedItems.slice(0, LIMIT);
+        const shardLabel = shardIndex === null ? '' : ` thuộc shard ${shardIndex + 1}/${shardCount}`;
+        console.log(`📦 [Queue Input] Đã tải ${limitedItems.length}/${shardedItems.length} phim${imageSource ? ` thuộc ${imageSource}` : ''}${shardLabel} từ ${inputFilePath}`);
         return limitedItems;
     }
 
@@ -716,7 +732,7 @@ async function fetchAllMovies() {
                     source_slug: selectedSource ? sourceSlugs[selectedSource] : null,
                     source_slugs: sourceSlugs,
                 };
-            }).filter(movie => movie.image_source);
+            });
         }
     } catch (dbErr) {
         console.warn('⚠️ [Database] Không thể đọc trực tiếp từ DB, chuyển sang quét API:', dbErr.message);
@@ -1073,6 +1089,7 @@ async function main() {
     console.log(`  Public API only: ${publicApiOnly}`);
     console.log(`  Source: ${inputFilePath ? 'queue-file' : sourceMode}`);
     console.log(`  Image source: ${imageSource || 'all'}`);
+    console.log(`  Queue shard: ${shardIndex === null ? 'all' : `${shardIndex + 1}/${shardCount}`}`);
     console.log(`  Export queue: ${exportQueuePath || 'false'}`);
     console.log(`  Dry-run: ${dryRun}`);
     console.log(`  Limit: ${LIMIT === Infinity ? 'unlimited' : LIMIT} phim`);

@@ -140,7 +140,7 @@ jobs:
     strategy:
       fail-fast: false
       matrix:
-        image_source: [kkphim, vsmov, nguonc]
+        shard: [0, 1, 2]
 
     steps:
       - name: Checkout repository
@@ -161,7 +161,7 @@ jobs:
           name: image-sync-queue
           path: .sync-input
 
-      - name: Run ${{ matrix.image_source }} image sync
+      - name: Run database shard ${{ matrix.shard }} image sync
         shell: bash
         env:
           R2_ACCOUNT_ID: ${{ secrets.R2_ACCOUNT_ID }}
@@ -198,7 +198,8 @@ jobs:
 
           node scripts/sync-images.mjs \
             --input-file=.sync-input/movies.json \
-            --image-source="${{ matrix.image_source }}" \
+            --shard="${{ matrix.shard }}" \
+            --shard-count=3 \
             --page-concurrency="$PAGE_CONCURRENCY" \
             "${R2_ARGS[@]}" \
             "${CONTENT_ARGS[@]}"
