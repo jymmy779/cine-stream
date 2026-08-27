@@ -1,5 +1,24 @@
 import { ReactNode } from "react";
+import type { Metadata } from "next";
 import AdminSidebar from "./AdminSidebar";
+
+export const metadata: Metadata = {
+  title: {
+    default: "Trang quản trị",
+    template: "%s | Quản trị LoFilm",
+  },
+  description: "Hệ thống quản trị nội dung và vận hành LoFilm.",
+  robots: {
+    index: false,
+    follow: false,
+    nocache: true,
+    googleBot: {
+      index: false,
+      follow: false,
+      noimageindex: true,
+    },
+  },
+};
 
 export default function AdminLayout({ children }: { children: ReactNode }) {
   return (
