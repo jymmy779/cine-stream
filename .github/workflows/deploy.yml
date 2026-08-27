@@ -44,7 +44,7 @@ jobs:
       - name: Archive Built Artifacts
         run: |
           # Script chạy trực tiếp trên VPS phải đi cùng artifact; không phụ thuộc git pull.
-          tar -czf build-artifacts.tar.gz .next backend/dist scripts/sync-images.mjs
+          tar -czf build-artifacts.tar.gz .next backend/dist backend/prisma/schema.prisma scripts/sync-images.mjs
 
       - name: Upload Artifacts to VPS via SCP
         uses: appleboy/scp-action@v0.1.7

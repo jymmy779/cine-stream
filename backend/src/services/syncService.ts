@@ -324,14 +324,46 @@ export async function upsertMovieDetail(
       normalizedCats.push({ name: "Hoạt Hình", slug: "hoat-hinh" });
     }
 
+    // Lưu snapshot thể loại hiện tại theo từng nguồn để có thể thu hồi quan hệ cũ.
+    // KK là nguồn chính; nếu phim không có taxonomy KK thì hợp nhất snapshot VS + NC.
+    if (Array.isArray(m.category) && m.category.length > 0) {
+      await prisma.movieTaxonomySource.upsert({
+        where: {
+          movie_id_source: { movie_id: targetMovieId, source: sourcePrefix },
+        },
+        update: { categories: JSON.stringify(normalizedCats.map((cat) => cat.slug)) },
+        create: {
+          movie_id: targetMovieId,
+          source: sourcePrefix,
+          categories: JSON.stringify(normalizedCats.map((cat) => cat.slug)),
+        },
+      });
+    }
+
+    const taxonomySnapshots = await prisma.movieTaxonomySource.findMany({
+      where: { movie_id: targetMovieId },
+      select: { source: true, categories: true },
+    });
+    const snapshotMap = new Map<string, string[]>();
+    for (const snapshot of taxonomySnapshots) {
+      try {
+        const slugs = JSON.parse(snapshot.categories);
+        snapshotMap.set(snapshot.source, Array.isArray(slugs) ? slugs.filter(Boolean) : []);
+      } catch {
+        snapshotMap.set(snapshot.source, []);
+      }
+    }
+
+    const kkCategories = snapshotMap.get("KK") || [];
+    const desiredCategorySlugs = kkCategories.length > 0
+      ? kkCategories
+      : [...new Set([...(snapshotMap.get("VS") || []), ...(snapshotMap.get("NC") || [])])];
     const categoryRecords = await prisma.category.findMany({
-      where: { slug: { in: normalizedCats.map((cat) => cat.slug) } },
+      where: { slug: { in: desiredCategorySlugs } },
       select: { id: true },
     });
 
-    // KKPhim là nguồn metadata chính. Thay thế taxonomy của nguồn này để quan hệ cũ
-    // không tồn tại vĩnh viễn; các nguồn phụ chỉ được phép bổ sung quan hệ hợp lệ.
-    if (sourcePrefix === "KK" && Array.isArray(m.category) && m.category.length > 0) {
+    if (desiredCategorySlugs.length > 0) {
       await prisma.movieCategory.deleteMany({
         where: {
           movie_id: targetMovieId,

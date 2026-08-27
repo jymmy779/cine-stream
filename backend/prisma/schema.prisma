@@ -8,18 +8,18 @@ datasource db {
 }
 
 model Movie {
-  id                String          @id @default(uuid())
-  slug              String          @unique
+  id                String    @id @default(uuid())
+  slug              String    @unique
   name              String
   origin_name       String?
   content           String?
-  type              String?         // single, series, hoathinh, tvshows
-  status            String?         // completed, ongoing, trailer
+  type              String? // single, series, hoathinh, tvshows
+  status            String? // completed, ongoing, trailer
   thumb_url         String?
   poster_url        String?
-  is_copyright      Boolean         @default(false)
-  sub_docquyen      Boolean         @default(false)
-  chieurap          Boolean         @default(false)
+  is_copyright      Boolean   @default(false)
+  sub_docquyen      Boolean   @default(false)
+  chieurap          Boolean   @default(false)
   trailer_url       String?
   time              String?
   episode_current   String?
@@ -29,21 +29,22 @@ model Movie {
   notify            String?
   showtimes         String?
   year              Int?
-  view_count        Int             @default(0)
+  view_count        Int       @default(0)
   tmdb_id           String?
   tmdb_type         String?
   tmdb_vote_average Float?
   tmdb_vote_count   Int?
-  actors            String          @default("[]")
-  directors         String          @default("[]")
-  is_exclusive      Boolean         @default(false)
+  actors            String    @default("[]")
+  directors         String    @default("[]")
+  is_exclusive      Boolean   @default(false)
   server_modified   DateTime?
-  created_at        DateTime        @default(now())
-  updated_at        DateTime        @updatedAt
+  created_at        DateTime  @default(now())
+  updated_at        DateTime  @updatedAt
 
-  categories        MovieCategory[]
-  countries         MovieCountry[]
-  episodes          EpisodeServer[]
+  categories       MovieCategory[]
+  countries        MovieCountry[]
+  episodes         EpisodeServer[]
+  taxonomy_sources MovieTaxonomySource[]
 
   @@index([type])
   @@index([year])
@@ -58,6 +59,17 @@ model Movie {
   @@index([view_count])
   @@index([chieurap, server_modified])
   @@index([sub_docquyen, server_modified])
+}
+
+model MovieTaxonomySource {
+  movie_id   String
+  source     String
+  categories String   @default("[]")
+  updated_at DateTime @updatedAt
+  movie      Movie    @relation(fields: [movie_id], references: [id], onDelete: Cascade)
+
+  @@id([movie_id, source])
+  @@index([source])
 }
 
 model Category {
@@ -125,8 +137,8 @@ model Episode {
 
 model SyncLog {
   id             String    @id @default(uuid())
-  sync_type      String    // CRON_INCREMENTAL, MANUAL, SEED
-  status         String    // SUCCESS, FAILED, RUNNING
+  sync_type      String // CRON_INCREMENTAL, MANUAL, SEED
+  status         String // SUCCESS, FAILED, RUNNING
   pages_crawled  Int       @default(0)
   movies_updated Int       @default(0)
   movies_created Int       @default(0)
