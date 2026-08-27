@@ -286,7 +286,7 @@ async function convertAndUpload(srcBuffer, r2Key, width, quality = 80) {
 
     const webpBuffer = await sharp(srcBuffer, { failOnError: false })
         .resize({ width, withoutEnlargement: true })
-        .webp({ quality })
+        .webp({ quality, effort: 5, smartSubsample: true })
         .toBuffer();
 
     await s3.send(new PutObjectCommand({
@@ -472,7 +472,7 @@ async function processMovieImages(movie, idx, total) {
                             'landscape',
                             normalizeImgUrl(poster_url),
                         );
-                        await convertAndUpload(buf, thumbKey, 800, 82);
+                        await convertAndUpload(buf, thumbKey, 1920, 84);
                         stats.movies.uploaded++;
                         thumbDone = true;
                     });
@@ -1116,7 +1116,12 @@ async function main() {
                     const url = normalizeImgUrl(item.url);
                     if (url) {
                         const buf = await downloadImage(url);
-                        await convertAndUpload(buf, item.key, item.type === 'poster' ? 400 : 800, 80);
+                        await convertAndUpload(
+                            buf,
+                            item.key,
+                            item.type === 'poster' ? 400 : 1920,
+                            item.type === 'poster' ? 80 : 84,
+                        );
                         fixedCount++;
                         console.log(`  ✅ Fixed: ${item.key}`);
                     }
