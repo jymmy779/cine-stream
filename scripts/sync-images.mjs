@@ -479,6 +479,7 @@ async function processMovieImages(movie, idx, total) {
         const eta = etaString(stats.movies.uploaded + stats.movies.skipped, total * 2);
         process.stdout.write(`\r[${idx}/${total}] ${pct}% | ↑${stats.movies.uploaded} skip${stats.movies.skipped} ✗${stats.movies.failed} | ETA:${eta} | ${displaySlug}`);
     } catch (outerErr) {
+        stats.movies.failed++;
         console.error(`\n  ✗ Bỏ qua phim lỗi không xác định [${movie?.slug || idx}]:`, outerErr.message);
     }
 }
@@ -508,12 +509,18 @@ async function fetchSourceMovieImages(movie) {
             url: `https://phim.nguonc.com/api/film/${encodeURIComponent(sourceSlug)}`,
             read: data => data?.movie || data?.data?.movie || data?.data?.item,
             reverse: true,
+            headers: {
+                Accept: 'application/json, text/plain, */*',
+                'User-Agent': 'Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/124.0.0.0 Safari/537.36',
+                Referer: 'https://phim.nguonc.com/',
+                Origin: 'https://phim.nguonc.com',
+            },
         },
     };
     const config = configs[imageSource];
     const response = await withRetry(async () => {
         const res = await fetch(config.url, {
-            headers: { Accept: 'application/json', 'User-Agent': 'Mozilla/5.0' },
+            headers: config.headers || { Accept: 'application/json', 'User-Agent': 'Mozilla/5.0' },
             signal: AbortSignal.timeout(imageSource === 'nguonc' ? 30000 : 15000),
         });
         if (!res.ok) throw new Error(`HTTP ${res.status}`);
@@ -1159,7 +1166,8 @@ async function main() {
     console.log(`\n[Bắt đầu] ${movies.length} phim | page-concurrency=${PAGE_CONCURRENCY} | batch=${newOnly ? 20 : 10}\n`);
 
     // Tăng batch size khi dùng --new-only (vì hầu hết là HeadObject check nhanh)
-    const BATCH_SIZE = newOnly ? 20 : 10;
+    // NguonC có WAF nhạy với burst request từ GitHub runner.
+    const BATCH_SIZE = imageSource === 'nguonc' ? 2 : (newOnly ? 20 : 10);
     for (let i = 0; i < movies.length; i += BATCH_SIZE) {
         const batch = movies.slice(i, i + BATCH_SIZE);
 
@@ -1185,7 +1193,7 @@ async function main() {
 
         // Delay giữa các batch
         if (i + BATCH_SIZE < movies.length) {
-            await sleep(500);
+            await sleep(imageSource === 'nguonc' ? 1000 : 500);
         }
     }
 
