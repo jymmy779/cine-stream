@@ -486,13 +486,15 @@ async function processMovieImages(movie, idx, total) {
 
 /**
  * Lấy ảnh detail bằng slug riêng của nguồn nhưng vẫn upload theo slug chuẩn của DB.
- * VS/NguonC trả tên field ngược quy ước giao diện nên được đảo tại đây.
+ * NguonC dùng URL trong queue DB vì API detail chặn IP GitHub Actions; bộ kiểm tra
+ * kích thước ở processMovieImages sẽ tự chọn đúng ảnh dọc/ngang dù hai field bị đảo.
  */
 async function fetchSourceMovieImages(movie) {
     if (!imageSource) return movie;
 
     const sourceSlug = movie.source_slug || movie.source_slugs?.[imageSource];
     if (!sourceSlug) throw new Error(`Phim ${movie.slug} không có source_slug cho ${imageSource}`);
+    if (imageSource === 'nguonc') return movie;
 
     const configs = {
         kkphim: {
@@ -505,27 +507,16 @@ async function fetchSourceMovieImages(movie) {
             read: data => data?.movie || data?.data?.movie || data?.data?.item,
             reverse: true,
         },
-        nguonc: {
-            url: `https://phim.nguonc.com/api/film/${encodeURIComponent(sourceSlug)}`,
-            read: data => data?.movie || data?.data?.movie || data?.data?.item,
-            reverse: true,
-            headers: {
-                Accept: 'application/json, text/plain, */*',
-                'User-Agent': 'Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/124.0.0.0 Safari/537.36',
-                Referer: 'https://phim.nguonc.com/',
-                Origin: 'https://phim.nguonc.com',
-            },
-        },
     };
     const config = configs[imageSource];
     const response = await withRetry(async () => {
         const res = await fetch(config.url, {
-            headers: config.headers || { Accept: 'application/json', 'User-Agent': 'Mozilla/5.0' },
-            signal: AbortSignal.timeout(imageSource === 'nguonc' ? 30000 : 15000),
+            headers: { Accept: 'application/json', 'User-Agent': 'Mozilla/5.0' },
+            signal: AbortSignal.timeout(15000),
         });
         if (!res.ok) throw new Error(`HTTP ${res.status}`);
         return res.json();
-    }, imageSource === 'nguonc' ? 5 : 3, 1000);
+    }, 3, 1000);
 
     const detail = config.read(response);
     if (!detail) throw new Error(`${imageSource} không trả dữ liệu detail cho ${sourceSlug}`);
@@ -1163,11 +1154,10 @@ async function main() {
     stats.movies.total = movies.length * 2; // poster + thumb
 
     syncStartTime = Date.now();
-    console.log(`\n[Bắt đầu] ${movies.length} phim | page-concurrency=${PAGE_CONCURRENCY} | batch=${newOnly ? 20 : 10}\n`);
-
-    // Tăng batch size khi dùng --new-only (vì hầu hết là HeadObject check nhanh)
-    // NguonC có WAF nhạy với burst request từ GitHub runner.
     const BATCH_SIZE = imageSource === 'nguonc' ? 2 : (newOnly ? 20 : 10);
+    console.log(`\n[Bắt đầu] ${movies.length} phim | page-concurrency=${PAGE_CONCURRENCY} | batch=${BATCH_SIZE}\n`);
+
+    // NguonC tải ảnh trực tiếp từ CDN nên giữ batch thấp để tránh burst request.
     for (let i = 0; i < movies.length; i += BATCH_SIZE) {
         const batch = movies.slice(i, i + BATCH_SIZE);
 
