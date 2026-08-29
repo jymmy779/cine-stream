@@ -176,6 +176,11 @@ export function sortAndSlicePosterRowMovies(items: Movie[]): Movie[] {
  */
 export function getEpisodeStatus(movie: Movie): string {
     const cur = (movie.episode_current || "").toLowerCase().trim();
+
+    // A single movie can retain a stale `episode_current: Trailer` after its
+    // full source is published. `quality: Trailer` is still an explicit signal.
+    if ((movie.quality || "").toLowerCase().includes("trailer")) return "Trailer";
+    if (movie.type === "single") return "Full";
     if (cur.includes("trailer")) return "Trailer";
 
     // Phim lẻ thực sự: episode_total = 1 HOẶC (episode_total không xác định VÀ current là "Full" chính xác)
@@ -214,6 +219,21 @@ export function getEpisodeStatus(movie: Movie): string {
     }
 
     return "Full";
+}
+
+/** A movie is trailer-only only when it has no real, playable episode. */
+export function hasPlayableMovieEpisode(servers: Array<{ server_data?: Array<{
+    name?: string;
+    slug?: string;
+    link_m3u8?: string;
+    link_embed?: string;
+}> }> | undefined): boolean {
+    return !!servers?.some(server => server.server_data?.some(episode => {
+        const name = (episode.name || "").toLowerCase();
+        const slug = (episode.slug || "").toLowerCase();
+        const isTrailer = name.includes("trailer") || slug.includes("trailer");
+        return !isTrailer && !!(episode.link_m3u8 || episode.link_embed);
+    }));
 }
 
 /**

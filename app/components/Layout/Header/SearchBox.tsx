@@ -5,7 +5,7 @@ import axios from "axios";
 import useSWR from "swr";
 import { Movie } from "@/app/types/movie";
 import { usePageTransition } from "@/app/components/UI/Transition/PageTransitionContext";
-import { getImageUrl, getRawImageUrl, getMoviePosterUrl, getMovieRawPosterUrl } from "@/app/utils/movieUtils";
+import { getImageUrl, getRawImageUrl, getMoviePosterUrl, getMovieRawPosterUrl, getEpisodeStatus } from "@/app/utils/movieUtils";
 import SmartImage from "@/app/components/UI/Common/SmartImage";
 import { MovieQualityBadge } from "@/app/components/UI/Common/MovieBadge";
 import TransitionLink from "@/app/components/UI/Transition/TransitionLink";
@@ -252,45 +252,7 @@ function SearchBoxInner({ autoFocus }: SearchBoxProps) {
                                                 </span>
                                                 <MovieQualityBadge movie={movie} className="text-[8px] md:text-[9px] px-1.5 py-0.5 rounded bg-pink-500/10 border border-pink-500/20 text-pink-400 uppercase shrink-0" />
                                                 <span className="text-[8px] md:text-[9px] px-1.5 py-0.5 rounded bg-[#D497FF]/10 border border-[#D497FF]/20 text-[#D497FF] font-medium whitespace-nowrap shrink-0">
-                                                    {(() => {
-                                                        const epCurrent = String(movie.episode_current || "").trim();
-                                                        const epTotal = String(movie.episode_total || "").trim();
-                                                        const type = movie.type || "";
-
-                                                        if (type === "single" || epCurrent.toLowerCase() === "full") {
-                                                            return "Full";
-                                                        }
-
-                                                        const isCompleted =
-                                                            epCurrent.toLowerCase().includes("hoàn tất") ||
-                                                            epCurrent.toLowerCase().includes("trọn bộ") ||
-                                                            epCurrent.toLowerCase().includes("full") ||
-                                                            movie.status === "completed";
-
-                                                        const curMatch = epCurrent.match(/\d+/);
-                                                        const totalMatch = epTotal.match(/\d+/);
-                                                        const curNum = curMatch ? curMatch[0] : "";
-                                                        const totalNum = totalMatch ? totalMatch[0] : "";
-
-                                                        if (isCompleted) {
-                                                            if (curNum && totalNum) {
-                                                                return `HT (${curNum}/${totalNum})`;
-                                                            }
-                                                            if (totalNum) {
-                                                                return `HT (${totalNum}/${totalNum})`;
-                                                            }
-                                                            if (curNum) {
-                                                                return `HT (${curNum}/${curNum})`;
-                                                            }
-                                                            return "HT";
-                                                        }
-
-                                                        if (curNum) {
-                                                            return `Tập ${curNum}`;
-                                                        }
-
-                                                        return epCurrent || "Full";
-                                                    })()}
+                                                    {getEpisodeStatus(movie)}
                                                 </span>
                                             </div>
                                         </div>
@@ -319,4 +281,3 @@ function SearchBoxInner({ autoFocus }: SearchBoxProps) {
 }
 
 export default memo(SearchBox);
-

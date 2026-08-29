@@ -39,7 +39,7 @@ import MovieInfo from "./MovieInfo";
 import CommentSection from "@/app/components/Social/Comments/CommentSection";
 import ReportModal from "@/app/components/UI/Common/ReportModal";
 import ShareModal from "@/app/components/Movies/Movie/ShareModal";
-import { getImageUrl, getRawImageUrl, getFriendlyEpisodeSlug, parseEpNumber } from "@/app/utils/movieUtils";
+import { getImageUrl, getRawImageUrl, getFriendlyEpisodeSlug, parseEpNumber, hasPlayableMovieEpisode } from "@/app/utils/movieUtils";
 import LazyRow from "@/app/components/UI/Common/LazyRow";
 import Skeleton from "@/app/components/UI/Skeleton/Skeleton";
 
@@ -188,10 +188,11 @@ export default function WatchClient({
         return list;
     }, [episodes]);
 
+    const hasPlayableEpisode = useMemo(() => hasPlayableMovieEpisode(episodes), [episodes]);
     const isTrailerOnly = useMemo(() => {
-        return (movie.episode_current || '').toLowerCase().includes('trailer') ||
-            (movie.quality || '').toLowerCase().includes('trailer');
-    }, [movie.episode_current, movie.quality]);
+        return !hasPlayableEpisode && ((movie.episode_current || '').toLowerCase().includes('trailer') ||
+            (movie.quality || '').toLowerCase().includes('trailer'));
+    }, [hasPlayableEpisode, movie.episode_current, movie.quality]);
 
     const filteredSuggestions = useMemo(() => {
         const seen = new Set();
@@ -443,15 +444,13 @@ export default function WatchClient({
         if (episodeYouTubeId) return episodeYouTubeId;
 
         // Kiểm tra xem phim có "đang là trailer" không (dựa trên episode_current)
-        const isMovieCurrentlyTrailer = (movie.episode_current || '').toLowerCase().includes('trailer') ||
-            (movie.quality || '').toLowerCase().includes('trailer');
-
-        // Nếu tập phim là trailer, HOẶC bản thân phim đang ở trạng thái trailer -> dùng link trailer của phim
-        if (isTrailerEpisode || isMovieCurrentlyTrailer) return getYouTubeId(movie.trailer_url || '');
+        // Metadata can remain stale after a full source is published. Only use
+        // the movie trailer when this episode is a trailer or no real episode exists.
+        if (isTrailerEpisode || isTrailerOnly) return getYouTubeId(movie.trailer_url || '');
 
         // Otherwise, it's a normal episode, do not show trailer
         return null;
-    }, [episodeYouTubeId, isTrailerEpisode, movie.trailer_url, movie.episode_current, movie.quality]);
+    }, [episodeYouTubeId, isTrailerEpisode, isTrailerOnly, movie.trailer_url]);
 
     const isTrailerMode = !!activeTrailerId;
 

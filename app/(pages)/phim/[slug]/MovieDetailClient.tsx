@@ -17,7 +17,8 @@ import {
     getFriendlyEpisodeSlug,
     filterDuplicateMovies,
     getYoutubeEmbedUrl,
-    generateCategorySlug
+    generateCategorySlug,
+    hasPlayableMovieEpisode
 } from "@/app/utils/movieUtils";
 import { getCategoryStyles } from "@/app/utils/uiUtils";
 import { INTERNAL_API_URL } from "@/app/utils/apiConfig";
@@ -228,10 +229,11 @@ export default function MovieDetailClient({
 
     // First server episodes & initial watch URL
     const firstServerEpisodes = episodes?.[0]?.server_data || [];
+    const hasPlayableEpisode = useMemo(() => hasPlayableMovieEpisode(episodes), [episodes]);
     const isTrailerOnly = useMemo(() => {
-        return (movie.episode_current || '').toLowerCase().includes('trailer') ||
-            (movie.quality || '').toLowerCase().includes('trailer');
-    }, [movie.episode_current, movie.quality]);
+        return !hasPlayableEpisode && ((movie.episode_current || '').toLowerCase().includes('trailer') ||
+            (movie.quality || '').toLowerCase().includes('trailer'));
+    }, [hasPlayableEpisode, movie.episode_current, movie.quality]);
 
     const watchEpisodeSlug = useMemo(() => {
         if (isTrailerOnly) return 'trailer';
