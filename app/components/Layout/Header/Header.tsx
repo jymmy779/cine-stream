@@ -117,6 +117,10 @@ export default function Header() {
         setOptimisticTab(null);
     }, [pathname]);
 
+    const navigateFromBottomBar = (href: string) => {
+        setOptimisticTab(href);
+        requestAnimationFrame(() => router.push(href));
+    };
     const activeRoute = optimisticTab ?? pathname;
     const isHomeActive = activeRoute === '/' && !hasSearchQuery && !isMenuOpen;
     const isKhamPhaActive = ((activeRoute.startsWith('/danh-sach/') && activeRoute !== '/danh-sach/phim-chieu-rap') || activeRoute.startsWith('/the-loai/') || activeRoute.startsWith('/quoc-gia/') || hasSearchQuery) && activeRoute !== '/';
@@ -259,18 +263,19 @@ export default function Header() {
             <div className="xl:hidden fixed bottom-4 md:bottom-6 left-1/2 -translate-x-1/2 z-[90] pointer-events-none">
                 <nav
                     aria-label="Mobile Navigation"
-                    className="relative h-[56px] md:h-[60px] bg-[#242528]/90 border border-white/15 rounded-full px-2.5 md:px-3 flex items-center gap-1.5 md:gap-2 pointer-events-auto"
+                    className="relative h-[56px] md:h-[60px] bg-[#242528]/90 border border-white/15 rounded-full px-2.5 md:px-3 flex items-center gap-1.5 md:gap-2 pointer-events-auto isolate transform-gpu [backface-visibility:hidden]"
                 >
                     {/* Tab 1: Trang chủ */}
                     <TransitionLink
                         href="/"
                         onClick={(e) => {
-                            if (isHomeActive) { e.preventDefault(); return; }
-                            setOptimisticTab('/');
+                            e.preventDefault();
+                            if (isHomeActive) return;
+                            navigateFromBottomBar('/');
                         }}
-                        className={`relative h-[42px] md:h-[46px] rounded-full flex items-center justify-center transition-all duration-200 ease-out active:scale-90 ${isHomeActive
+                        className={`relative h-[42px] md:h-[46px] rounded-full flex items-center justify-center transform-gpu transition-[padding,gap,background-color,color,transform] duration-200 ease-out active:scale-90 ${isHomeActive
                             ? "bg-[#D497FF]/15 text-[#D497FF] px-3.5 md:px-4 gap-2 md:gap-2.5"
-                            : "w-[42px] md:w-[46px] text-white/50 hover:text-white/80"
+                            : "px-[10.5px] md:px-[11.5px] gap-0 text-white/50 hover:text-white/80"
                             }`}
                     >
                         <svg className="shrink-0 transition-transform duration-200 w-[21px] h-[21px] md:w-[23px] md:h-[23px]" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth={isHomeActive ? "2.3" : "1.8"} strokeLinecap="round" strokeLinejoin="round"><path d="m3 9 9-7 9 7v11a2 2 0 0 1-2 2H5a2 2 0 0 1-2-2z" /><polyline points="9 22 9 12 15 12 15 22" /></svg>
@@ -284,12 +289,13 @@ export default function Header() {
                     <TransitionLink
                         href="/danh-sach/phim-moi-cap-nhat"
                         onClick={(e) => {
-                            if (isKhamPhaActive) { e.preventDefault(); return; }
-                            setOptimisticTab('/danh-sach/phim-moi-cap-nhat');
+                            e.preventDefault();
+                            if (isKhamPhaActive) return;
+                            navigateFromBottomBar('/danh-sach/phim-moi-cap-nhat');
                         }}
-                        className={`relative h-[42px] md:h-[46px] rounded-full flex items-center justify-center transition-all duration-200 ease-out active:scale-90 ${isKhamPhaActive
+                        className={`relative h-[42px] md:h-[46px] rounded-full flex items-center justify-center transform-gpu transition-[padding,gap,background-color,color,transform] duration-200 ease-out active:scale-90 ${isKhamPhaActive
                             ? "bg-[#D497FF]/15 text-[#D497FF] px-3.5 md:px-4 gap-2 md:gap-2.5"
-                            : "w-[42px] md:w-[46px] text-white/50 hover:text-white/80"
+                            : "px-[10.5px] md:px-[11.5px] gap-0 text-white/50 hover:text-white/80"
                             }`}
                     >
                         <svg className="shrink-0 transition-transform duration-200 w-[21px] h-[21px] md:w-[23px] md:h-[23px]" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth={isKhamPhaActive ? "2.3" : "1.8"} strokeLinecap="round" strokeLinejoin="round"><circle cx="12" cy="12" r="10" /><polygon points="16.24 7.76 14.12 14.12 7.76 16.24 9.88 9.88 16.24 7.76" /></svg>
@@ -304,16 +310,15 @@ export default function Header() {
                         onClick={(e) => {
                             if (isPlaylistActive) { e.preventDefault(); return; }
                             if (user) {
-                                setOptimisticTab('/thu-vien');
-                                router.push('/thu-vien');
+                                navigateFromBottomBar('/thu-vien');
                             } else {
                                 setLoginPromptSource("playlist");
                                 setShowLoginPrompt(true);
                             }
                         }}
-                        className={`relative h-[42px] md:h-[46px] rounded-full flex items-center justify-center transition-all duration-200 ease-out active:scale-90 ${isPlaylistActive
+                        className={`relative h-[42px] md:h-[46px] rounded-full flex items-center justify-center transform-gpu transition-[padding,gap,background-color,color,transform] duration-200 ease-out active:scale-90 ${isPlaylistActive
                             ? "bg-[#D497FF]/15 text-[#D497FF] px-3.5 md:px-4 gap-2 md:gap-2.5"
-                            : "w-[42px] md:w-[46px] text-white/50 hover:text-white/80"
+                            : "px-[10.5px] md:px-[11.5px] gap-0 text-white/50 hover:text-white/80"
                             }`}
                     >
                         <svg className="shrink-0 transition-transform duration-200 w-[21px] h-[21px] md:w-[23px] md:h-[23px]" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth={isPlaylistActive ? "2.3" : "1.8"} strokeLinecap="round" strokeLinejoin="round"><path d="m16 6 4 14" /><path d="M12 6v14" /><path d="M8 8v12" /><path d="M4 4v16" /></svg>
@@ -327,12 +332,13 @@ export default function Header() {
                     <TransitionLink
                         href="/danh-sach/phim-chieu-rap"
                         onClick={(e) => {
-                            if (isLichChieuActive) { e.preventDefault(); return; }
-                            setOptimisticTab('/danh-sach/phim-chieu-rap');
+                            e.preventDefault();
+                            if (isLichChieuActive) return;
+                            navigateFromBottomBar('/danh-sach/phim-chieu-rap');
                         }}
-                        className={`relative h-[42px] md:h-[46px] rounded-full flex items-center justify-center transition-all duration-200 ease-out active:scale-90 ${isLichChieuActive
+                        className={`relative h-[42px] md:h-[46px] rounded-full flex items-center justify-center transform-gpu transition-[padding,gap,background-color,color,transform] duration-200 ease-out active:scale-90 ${isLichChieuActive
                             ? "bg-[#D497FF]/15 text-[#D497FF] px-3.5 md:px-4 gap-2 md:gap-2.5"
-                            : "w-[42px] md:w-[46px] text-white/50 hover:text-white/80"
+                            : "px-[10.5px] md:px-[11.5px] gap-0 text-white/50 hover:text-white/80"
                             }`}
                     >
                         <svg className="shrink-0 transition-transform duration-200 w-[21px] h-[21px] md:w-[23px] md:h-[23px]" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth={isLichChieuActive ? "2.3" : "1.8"} strokeLinecap="round" strokeLinejoin="round"><rect width="18" height="18" x="3" y="4" rx="2" ry="2" /><line x1="16" x2="16" y1="2" y2="6" /><line x1="8" x2="8" y1="2" y2="6" /><line x1="3" x2="21" y1="10" y2="10" /><path d="M8 14h.01" /><path d="M12 14h.01" /><path d="M16 14h.01" /><path d="M8 18h.01" /><path d="M12 18h.01" /><path d="M16 18h.01" /></svg>
@@ -347,16 +353,15 @@ export default function Header() {
                         onClick={(e) => {
                             if (isCaNhanActive) { e.preventDefault(); return; }
                             if (user) {
-                                setOptimisticTab('/ca-nhan');
-                                router.push('/ca-nhan');
+                                navigateFromBottomBar('/ca-nhan');
                             } else {
                                 setLoginPromptSource("account");
                                 setShowLoginPrompt(true);
                             }
                         }}
-                        className={`relative h-[42px] md:h-[46px] rounded-full flex items-center justify-center transition-all duration-200 ease-out active:scale-90 ${isCaNhanActive
+                        className={`relative h-[42px] md:h-[46px] rounded-full flex items-center justify-center transform-gpu transition-[padding,gap,background-color,color,transform] duration-200 ease-out active:scale-90 ${isCaNhanActive
                             ? "bg-[#D497FF]/15 text-[#D497FF] px-3.5 md:px-4 gap-2 md:gap-2.5"
-                            : "w-[42px] md:w-[46px] text-white/50 hover:text-white/80"
+                            : "px-[10.5px] md:px-[11.5px] gap-0 text-white/50 hover:text-white/80"
                             }`}
                     >
                         {isMounted && user ? (

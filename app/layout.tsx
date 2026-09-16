@@ -8,9 +8,8 @@ import { PageTransitionProvider } from "./components/UI/Transition/PageTransitio
 import "./globals.css";
 import { Inter, Montserrat } from "next/font/google";
 
-async function EventLoaderWrapper() {
-  const settings = await getSiteSettings();
-  if (settings.active_event === 'reunification') {
+function EventLoaderWrapper({ activeEvent }: { activeEvent?: string }) {
+  if (activeEvent === 'reunification') {
     return <ReunificationLoader />;
   }
   return <InitialLoader />;
@@ -275,7 +274,7 @@ export default async function RootLayout({
         <WakeUpMonitor />
         <AuthListener />
         {/* Render Event Loader or Default Loader based on admin settings */}
-        <EventLoaderWrapper />
+        <EventLoaderWrapper activeEvent={settings.active_event} />
         <AuthProvider>
           <PageTransitionProvider>
             <div className="min-h-screen flex flex-col">

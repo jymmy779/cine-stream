@@ -1,5 +1,6 @@
 "use server";
-import { createClient } from "@/app/utils/supabase/server";
+import { createClient as createServerClient } from "@/app/utils/supabase/server";
+import { createClient as createSupabaseClient } from "@supabase/supabase-js";
 import { revalidatePath } from "next/cache";
 
 let cachedSettings: { data: any; expiresAt: number } | null = null;
@@ -12,7 +13,10 @@ export async function getSiteSettings(forceFresh = false) {
     }
 
     try {
-        const supabase = await createClient();
+        const supabase = createSupabaseClient(
+            process.env.NEXT_PUBLIC_SUPABASE_URL!,
+            process.env.NEXT_PUBLIC_SUPABASE_ANON_KEY!
+        );
         const { data, error } = await supabase.from("site_settings").select("*");
 
         if (error || !data) {
@@ -33,7 +37,7 @@ export async function updateSiteSetting(key: string, value: any) {
     // Xóa cache ngay lập tức để request tiếp theo đọc giá trị mới
     cachedSettings = null;
 
-    const supabase = await createClient();
+    const supabase = await createServerClient();
     const { error } = await supabase
         .from("site_settings")
         .upsert({ key, value, updated_at: new Date().toISOString() }, { onConflict: 'key' });
