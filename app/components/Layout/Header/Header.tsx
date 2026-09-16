@@ -111,6 +111,7 @@ export default function Header() {
     const extraCategories: MenuItem[] = [
         { _id: "tv-shows", name: "TV Shows", slug: "tv-shows" },
         { _id: "phim-chieu-rap", name: "Phim chiếu rạp", slug: "phim-chieu-rap" },
+        { _id: "phim-4k", name: "Phim 4K", slug: "phim-4k" },
     ];
 
     const showBackground = isScrolled || isMenuOpen;
