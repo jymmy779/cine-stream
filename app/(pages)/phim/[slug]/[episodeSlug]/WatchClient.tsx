@@ -225,6 +225,10 @@ export default function WatchClient({
     const isTheaterMode = isMounted ? settings.theaterMode : false;
     const isAutoNext = isMounted ? settings.autoNext : true;
     const isAutoPlay = isMounted ? settings.autoPlay : true;
+    const isAppleTouch = isMounted && isAppleTouchDevice();
+
+    const nativeVideoRef = useRef<HTMLVideoElement>(null);
+
 
     const setIsExpanded = (val: boolean) => { if (val !== settings.theaterMode) settings.toggleTheaterMode(); };
     const setIsTheaterMode = (val: boolean) => { if (val !== settings.theaterMode) settings.toggleTheaterMode(); };
@@ -534,6 +538,13 @@ export default function WatchClient({
 
         // ─── iOS & iPadOS: Gọi native fullscreen trực tiếp trên thẻ <video> ───
         // iOS không support fullscreen trên thẻ <div>, nhưng support trên thẻ <video>
+        if (isAppleTouch && nativeVideoRef.current) {
+            const video = nativeVideoRef.current as any;
+            if (video.webkitEnterFullscreen) {
+                video.webkitEnterFullscreen();
+                return;
+            }
+        }
         if (isAppleTouchDevice() && artRef.current?.video) {
             const video = artRef.current.video as any;
             if (video.webkitEnterFullscreen) {
@@ -670,8 +681,71 @@ export default function WatchClient({
         selectEpisode(getFriendlyEpisodeSlug(nextEpisode.slug));
     }, [nextEpisode, selectEpisode]);
 
+    const handleNativeLoadedMetadata = useCallback(() => {
+        const video = nativeVideoRef.current;
+        if (!video) return;
+        if (fallbackTimeRef.current > 0) {
+            video.currentTime = fallbackTimeRef.current;
+        }
+    }, []);
+
+    const handleNativeTimeUpdate = useCallback((e: React.SyntheticEvent<HTMLVideoElement>) => {
+        const video = e.currentTarget;
+        handleTimeUpdateRef.current?.(video.currentTime, video.duration, video.paused);
+    }, []);
+
+    const handleNativeEnded = useCallback(() => {
+        if (autoNextRef.current) {
+            goToNextEpisode();
+        }
+    }, [goToNextEpisode]);
+
+    const handleNativeError = useCallback(() => {
+        setHasError(true);
+    }, []);
+
     useEffect(() => {
-        if (isEmbedServer || isTrailerMode) return;
+        if (!isAppleTouch) return;
+        const fetchHistoryTime = async () => {
+            let startFrom = 0;
+            const { data: { user: currentUser } } = await supabase.auth.getUser();
+            if (currentUser) {
+                const { data: history } = await supabase
+                    .from('watch_history')
+                    .select('watched_seconds')
+                    .eq('user_id', currentUser.id)
+                    .eq('movie_slug', slug)
+                    .eq('episode_slug', currentEpisodeSlug)
+                    .maybeSingle();
+                if (history && history.watched_seconds > 10) {
+                    startFrom = history.watched_seconds;
+                }
+            }
+            if (startFrom <= 10) {
+                try {
+                    const HISTORY_KEY = currentUser ? `lofilm-watch-history-${currentUser.id}` : 'lofilm-guest-watch-history';
+                    const historyStr = localStorage.getItem(HISTORY_KEY);
+                    if (historyStr) {
+                        const history = JSON.parse(historyStr);
+                        const item = history[`${slug}/${currentEpisodeSlug}`];
+                        if (item && item.watched_seconds > 10) {
+                            startFrom = item.watched_seconds;
+                        }
+                    }
+                } catch (e) { }
+            }
+            if (startFrom > 0) {
+                fallbackTimeRef.current = startFrom;
+                if (nativeVideoRef.current && nativeVideoRef.current.readyState >= 1) {
+                    nativeVideoRef.current.currentTime = startFrom;
+                }
+            }
+        };
+        fetchHistoryTime();
+    }, [isAppleTouch, slug, currentEpisodeSlug, supabase]);
+
+    useEffect(() => {
+        if (isEmbedServer || isTrailerMode || isAppleTouch) return;
 
         let isMounted = true;
         const container = artContainerRef.current;
@@ -1450,13 +1524,46 @@ export default function WatchClient({
                         }
                     `}</style>
 
-                        {/* HLS Video Container */}
-                        <div className={`w-full h-full absolute inset-0 z-0 ${isEmbedServer ? 'hidden' : 'block'}`}>
-                            <div ref={artContainerRef} className="w-full h-full"></div>
-                        </div>
+                        {/* Native iOS / iPadOS Video Player */}
+                        {!isTrailerMode && !isEmbedServer && isAppleTouch && (
+                            <div className="w-full h-full absolute inset-0 z-0 bg-black flex items-center justify-center">
+                                <video
+                                    ref={nativeVideoRef}
+                                    key={videoSrc}
+                                    src={videoSrc}
+                                    controls
+                                    playsInline
+                                    webkit-playsinline="true"
+                                    x-webkit-airplay="allow"
+                                    poster={getImageUrl(movie.thumb_url, { width: 1280, quality: 85 })}
+                                    className="w-full h-full object-contain bg-black"
+                                    onTimeUpdate={handleNativeTimeUpdate}
+                                    onLoadedMetadata={handleNativeLoadedMetadata}
+                                    onEnded={handleNativeEnded}
+                                    onError={handleNativeError}
+                                >
+                                    {!hasCustomSubtitles && currentEpisode.link_vtt && (
+                                        <track
+                                            kind="captions"
+                                            label="Tiếng Việt"
+                                            srcLang="vi"
+                                            src={currentEpisode.link_vtt}
+                                            default
+                                        />
+                                    )}
+                                </video>
+                            </div>
+                        )}
 
-                        {/* Double-tap visual indicators (mobile/tablet) */}
-                        {!isEmbedServer && (
+                        {/* HLS Video Container with Artplayer (Desktop / Android / macOS Non-Touch) */}
+                        {!isAppleTouch && (
+                            <div className={`w-full h-full absolute inset-0 z-0 ${isEmbedServer ? 'hidden' : 'block'}`}>
+                                <div ref={artContainerRef} className="w-full h-full"></div>
+                            </div>
+                        )}
+
+                        {/* Double-tap visual indicators (mobile/tablet Android only) */}
+                        {!isEmbedServer && !isAppleTouch && (
                             <>
                                 {/* Tap ripples container */}
                                 <div className="absolute inset-0 z-10 pointer-events-none overflow-hidden">
