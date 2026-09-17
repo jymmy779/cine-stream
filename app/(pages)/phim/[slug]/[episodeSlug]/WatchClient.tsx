@@ -27,6 +27,9 @@ const isAppleSafari = () => {
 };
 
 const isIOSDevice = isAppleTouchDevice;
+const isAppleDevice = () =>
+    typeof navigator !== 'undefined' &&
+    (isAppleTouchDevice() || /Mac/.test(navigator.platform) || /Macintosh/.test(navigator.userAgent));
 
 // Helper to extract YouTube video ID from various URL formats
 const getYouTubeId = (url: string): string | null => {
@@ -225,7 +228,7 @@ export default function WatchClient({
     const isTheaterMode = isMounted ? settings.theaterMode : false;
     const isAutoNext = isMounted ? settings.autoNext : true;
     const isAutoPlay = isMounted ? settings.autoPlay : true;
-    const isAppleTouch = isMounted && isAppleTouchDevice();
+    const useNativeApplePlayer = isMounted && isAppleDevice();
 
     const nativeVideoRef = useRef<HTMLVideoElement>(null);
 
@@ -538,7 +541,7 @@ export default function WatchClient({
 
         // ─── iOS & iPadOS: Gọi native fullscreen trực tiếp trên thẻ <video> ───
         // iOS không support fullscreen trên thẻ <div>, nhưng support trên thẻ <video>
-        if (isAppleTouch && nativeVideoRef.current) {
+        if (useNativeApplePlayer && nativeVideoRef.current) {
             const video = nativeVideoRef.current as any;
             if (video.webkitEnterFullscreen) {
                 video.webkitEnterFullscreen();
@@ -590,7 +593,7 @@ export default function WatchClient({
                 setIsCSSFullscreen(true);
             }
         }
-    }, []);
+    }, [useNativeApplePlayer]);
 
     const toggleAutoNext = useCallback(() => {
         settings.toggleAutoNext();
@@ -705,7 +708,33 @@ export default function WatchClient({
     }, []);
 
     useEffect(() => {
-        if (!isAppleTouch) return;
+        if (!useNativeApplePlayer || isEmbedServer || isTrailerMode) return;
+        const video = nativeVideoRef.current;
+        if (!video || !videoSrc) return;
+        let hls: Hls | null = null;
+        if (video.canPlayType('application/vnd.apple.mpegurl')) {
+            video.src = videoSrc;
+        } else if (Hls.isSupported()) {
+            // Chrome/Firefox trên macOS vẫn dùng controls video native.
+            hls = new Hls();
+            hls.attachMedia(video);
+            hls.loadSource(videoSrc);
+            hls.on(Hls.Events.ERROR, (_event, data) => {
+                if (data.fatal) setHasError(true);
+            });
+        } else {
+            setHasError(true);
+        }
+        return () => {
+            hls?.destroy();
+            video.pause();
+            video.removeAttribute('src');
+            video.load();
+        };
+    }, [useNativeApplePlayer, isEmbedServer, isTrailerMode, videoSrc]);
+
+    useEffect(() => {
+        if (!useNativeApplePlayer) return;
         const fetchHistoryTime = async () => {
             let startFrom = 0;
             const { data: { user: currentUser } } = await supabase.auth.getUser();
@@ -742,10 +771,10 @@ export default function WatchClient({
             }
         };
         fetchHistoryTime();
-    }, [isAppleTouch, slug, currentEpisodeSlug, supabase]);
+    }, [useNativeApplePlayer, slug, currentEpisodeSlug, supabase]);
 
     useEffect(() => {
-        if (isEmbedServer || isTrailerMode || isAppleTouch) return;
+        if (isEmbedServer || isTrailerMode || useNativeApplePlayer) return;
 
         let isMounted = true;
         const container = artContainerRef.current;
@@ -1061,7 +1090,7 @@ export default function WatchClient({
                 hlsRef.current = null;
             }
         };
-    }, [videoSrc, nextEpisode, slug, isEmbedServer, goToNextEpisode]);
+    }, [useNativeApplePlayer, isTrailerMode, videoSrc, nextEpisode, slug, isEmbedServer, goToNextEpisode]);
 
     useEffect(() => {
         const handleKeyDown = (e: KeyboardEvent) => {
@@ -1336,7 +1365,7 @@ export default function WatchClient({
 
     if (!movie || !currentEpisode) return null;
 
-    const portalTarget = isEmbedServer ? containerNode : artContainer;
+    const portalTarget = useNativeApplePlayer && !isEmbedServer ? null : (isEmbedServer ? containerNode : artContainer);
 
     return (
         <div className={`${isFullscreenActive ? 'fixed inset-0 z-[99999] bg-black p-0 m-0 w-screen h-screen overflow-hidden' : 'pt-27 pb-12 min-h-screen relative'} transition-all duration-300 animate-fade-in`}>
@@ -1524,13 +1553,12 @@ export default function WatchClient({
                         }
                     `}</style>
 
-                        {/* Native iOS / iPadOS Video Player */}
-                        {!isTrailerMode && !isEmbedServer && isAppleTouch && (
+                        {/* Native Apple Video Player */}
+                        {!isTrailerMode && !isEmbedServer && useNativeApplePlayer && (
                             <div className="w-full h-full absolute inset-0 z-0 bg-black flex items-center justify-center">
                                 <video
                                     ref={nativeVideoRef}
                                     key={videoSrc}
-                                    src={videoSrc}
                                     controls
                                     playsInline
                                     webkit-playsinline="true"
@@ -1555,15 +1583,15 @@ export default function WatchClient({
                             </div>
                         )}
 
-                        {/* HLS Video Container with Artplayer (Desktop / Android / macOS Non-Touch) */}
-                        {!isAppleTouch && (
+                        {/* HLS Video Container with Artplayer (Windows / Android) */}
+                        {!useNativeApplePlayer && (
                             <div className={`w-full h-full absolute inset-0 z-0 ${isEmbedServer ? 'hidden' : 'block'}`}>
                                 <div ref={artContainerRef} className="w-full h-full"></div>
                             </div>
                         )}
 
                         {/* Double-tap visual indicators (mobile/tablet Android only) */}
-                        {!isEmbedServer && !isAppleTouch && (
+                        {!isEmbedServer && !useNativeApplePlayer && (
                             <>
                                 {/* Tap ripples container */}
                                 <div className="absolute inset-0 z-10 pointer-events-none overflow-hidden">
