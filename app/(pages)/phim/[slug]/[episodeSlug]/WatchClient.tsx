@@ -10,23 +10,11 @@ import { useRouter } from "next/navigation";
 import Hls from "hls.js";
 import Artplayer from "artplayer";
 
-// Detect iOS & iPadOS — iPadOS 13+ gửi UA là 'Macintosh' nhưng có navigator.maxTouchPoints > 1
-const isAppleTouchDevice = () => {
-    if (typeof navigator === 'undefined') return false;
-    return (
-        /iPad|iPhone|iPod/.test(navigator.userAgent) ||
-        (navigator.platform === 'MacIntel' && navigator.maxTouchPoints > 1)
-    );
-};
-
-// Detect Apple Safari (cả iOS, iPadOS và macOS Safari)
-const isAppleSafari = () => {
-    if (typeof navigator === 'undefined') return false;
-    const ua = navigator.userAgent.toLowerCase();
-    return ua.includes('safari') && !ua.includes('chrome') && !ua.includes('chromium') && !ua.includes('android');
-};
-
-const isIOSDevice = isAppleTouchDevice;
+// Detect iOS Safari — không support requestFullscreen() trên div element
+const isIOSDevice = () =>
+    typeof navigator !== 'undefined' &&
+    (/iPad|iPhone|iPod/.test(navigator.userAgent) ||
+        (navigator.platform === 'MacIntel' && navigator.maxTouchPoints > 1));
 
 // Helper to extract YouTube video ID from various URL formats
 const getYouTubeId = (url: string): string | null => {
@@ -225,10 +213,6 @@ export default function WatchClient({
     const isTheaterMode = isMounted ? settings.theaterMode : false;
     const isAutoNext = isMounted ? settings.autoNext : true;
     const isAutoPlay = isMounted ? settings.autoPlay : true;
-    const isAppleTouch = isMounted && isAppleTouchDevice();
-
-    const nativeVideoRef = useRef<HTMLVideoElement>(null);
-
 
     const setIsExpanded = (val: boolean) => { if (val !== settings.theaterMode) settings.toggleTheaterMode(); };
     const setIsTheaterMode = (val: boolean) => { if (val !== settings.theaterMode) settings.toggleTheaterMode(); };
@@ -476,17 +460,7 @@ export default function WatchClient({
     }, [activeTrailerId]);
 
     useEffect(() => {
-        if (embedSrc) {
-            setIsIframeLoading(true);
-            // Fallback timeout: nếu nguồn nhúng bị chặn tracker/quảng cáo hoặc load chậm khiến iframe onLoad không kích hoạt,
-            // tự động tắt overlay loading sau 3 giây để người dùng mở trình phát bình thường.
-            const timer = setTimeout(() => {
-                setIsIframeLoading(false);
-            }, 3000);
-            return () => clearTimeout(timer);
-        } else {
-            setIsIframeLoading(false);
-        }
+        if (embedSrc) setIsIframeLoading(true);
     }, [embedSrc]);
 
     useEffect(() => {
@@ -536,16 +510,9 @@ export default function WatchClient({
         const wrapper = fullscreenWrapperRef.current;
         if (!wrapper) return;
 
-        // ─── iOS & iPadOS: Gọi native fullscreen trực tiếp trên thẻ <video> ───
+        // ─── iOS Safari: Gọi native fullscreen trực tiếp trên thẻ <video> ───
         // iOS không support fullscreen trên thẻ <div>, nhưng support trên thẻ <video>
-        if (isAppleTouch && nativeVideoRef.current) {
-            const video = nativeVideoRef.current as any;
-            if (video.webkitEnterFullscreen) {
-                video.webkitEnterFullscreen();
-                return;
-            }
-        }
-        if (isAppleTouchDevice() && artRef.current?.video) {
+        if (isIOSDevice() && artRef.current?.video) {
             const video = artRef.current.video as any;
             if (video.webkitEnterFullscreen) {
                 video.webkitEnterFullscreen();
@@ -681,71 +648,8 @@ export default function WatchClient({
         selectEpisode(getFriendlyEpisodeSlug(nextEpisode.slug));
     }, [nextEpisode, selectEpisode]);
 
-    const handleNativeLoadedMetadata = useCallback(() => {
-        const video = nativeVideoRef.current;
-        if (!video) return;
-        if (fallbackTimeRef.current > 0) {
-            video.currentTime = fallbackTimeRef.current;
-        }
-    }, []);
-
-    const handleNativeTimeUpdate = useCallback((e: React.SyntheticEvent<HTMLVideoElement>) => {
-        const video = e.currentTarget;
-        handleTimeUpdateRef.current?.(video.currentTime, video.duration, video.paused);
-    }, []);
-
-    const handleNativeEnded = useCallback(() => {
-        if (autoNextRef.current) {
-            goToNextEpisode();
-        }
-    }, [goToNextEpisode]);
-
-    const handleNativeError = useCallback(() => {
-        setHasError(true);
-    }, []);
-
     useEffect(() => {
-        if (!isAppleTouch) return;
-        const fetchHistoryTime = async () => {
-            let startFrom = 0;
-            const { data: { user: currentUser } } = await supabase.auth.getUser();
-            if (currentUser) {
-                const { data: history } = await supabase
-                    .from('watch_history')
-                    .select('watched_seconds')
-                    .eq('user_id', currentUser.id)
-                    .eq('movie_slug', slug)
-                    .eq('episode_slug', currentEpisodeSlug)
-                    .maybeSingle();
-                if (history && history.watched_seconds > 10) {
-                    startFrom = history.watched_seconds;
-                }
-            }
-            if (startFrom <= 10) {
-                try {
-                    const HISTORY_KEY = currentUser ? `lofilm-watch-history-${currentUser.id}` : 'lofilm-guest-watch-history';
-                    const historyStr = localStorage.getItem(HISTORY_KEY);
-                    if (historyStr) {
-                        const history = JSON.parse(historyStr);
-                        const item = history[`${slug}/${currentEpisodeSlug}`];
-                        if (item && item.watched_seconds > 10) {
-                            startFrom = item.watched_seconds;
-                        }
-                    }
-                } catch (e) { }
-            }
-            if (startFrom > 0) {
-                fallbackTimeRef.current = startFrom;
-                if (nativeVideoRef.current && nativeVideoRef.current.readyState >= 1) {
-                    nativeVideoRef.current.currentTime = startFrom;
-                }
-            }
-        };
-        fetchHistoryTime();
-    }, [isAppleTouch, slug, currentEpisodeSlug, supabase]);
-
-    useEffect(() => {
-        if (isEmbedServer || isTrailerMode || isAppleTouch) return;
+        if (isEmbedServer || isTrailerMode) return;
 
         let isMounted = true;
         const container = artContainerRef.current;
@@ -811,7 +715,7 @@ export default function WatchClient({
                 backdrop: true,
                 playsInline: true,
                 autoPlayback: false,
-                airplay: true,
+                airplay: false,
                 hotkey: false,
                 lock: false,
                 gesture: false,
@@ -829,47 +733,17 @@ export default function WatchClient({
                 },
                 customType: {
                     m3u8: function (video, url, art) {
-                        // ─── APPLE ECOSYSTEM (iOS, iPadOS, macOS Safari): Ưu tiên tuyệt đối Native HLS của Apple ───
-                        // Tận dụng tối đa bộ giải mã phần cứng AVPlayer, tiết kiệm pin, hỗ trợ AirPlay và PiP native
-                        const useNativeAppleHls = (isAppleSafari() || isAppleTouchDevice()) && Boolean(video.canPlayType('application/vnd.apple.mpegurl'));
+                        const onBeginFullscreen = () => setIsFullscreen(true);
+                        const onEndFullscreen = () => setIsFullscreen(false);
+                        video.addEventListener('webkitbeginfullscreen', onBeginFullscreen);
+                        video.addEventListener('webkitendfullscreen', onEndFullscreen);
+                        art.on('destroy', () => {
+                            video.removeEventListener('webkitbeginfullscreen', onBeginFullscreen);
+                            video.removeEventListener('webkitendfullscreen', onEndFullscreen);
+                        });
 
-                        if (useNativeAppleHls) {
-                            video.src = url;
-                            (video as any).setAttribute?.('x-webkit-airplay', 'allow');
-                            (video as any).setAttribute?.('webkit-playsinline', 'true');
-                            (video as any).setAttribute?.('playsinline', 'true');
-
-                            const onLoadedMetadata = () => {
-                                if (startFrom > 0) {
-                                    video.currentTime = startFrom;
-                                }
-                                if (!hasCustomSubtitles && currentEpisode.link_vtt) {
-                                    const existingTracks = video.querySelectorAll('track');
-                                    existingTracks.forEach(t => t.remove());
-
-                                    const track = document.createElement('track');
-                                    track.kind = 'captions';
-                                    track.label = 'Vietnamese';
-                                    track.srclang = 'vi';
-                                    track.src = currentEpisode.link_vtt;
-                                    track.default = true;
-                                    video.appendChild(track);
-                                }
-                            };
-                            video.addEventListener('loadedmetadata', onLoadedMetadata, { once: true });
-
-                            const onNativeError = () => {
-                                setHasError(true);
-                            };
-                            video.addEventListener('error', onNativeError, { once: true });
-
-                            // Lắng nghe sự kiện fullscreen native của iOS/iPadOS trên thẻ video
-                            const onWebKitBeginFullscreen = () => setIsFullscreen(true);
-                            const onWebKitEndFullscreen = () => setIsFullscreen(false);
-                            video.addEventListener('webkitbeginfullscreen', onWebKitBeginFullscreen);
-                            video.addEventListener('webkitendfullscreen', onWebKitEndFullscreen);
-                        } else if (Hls.isSupported()) {
-                            // ─── WINDOWS / ANDROID / CHROME / FIREFOX: Dùng hls.js qua MSE ───
+                        // Chọn HLS theo khả năng MSE/MMS, không ép native trên Apple.
+                        if (Hls.isSupported()) {
                             if (art.hls) (art.hls as Hls).destroy();
                             const hls = new Hls({
                                 startPosition: startFrom > 0 ? startFrom : -1,
@@ -909,7 +783,6 @@ export default function WatchClient({
                                 }
                             });
                         } else if (video.canPlayType('application/vnd.apple.mpegurl')) {
-                            // Fallback chung nếu hls.js không hỗ trợ
                             video.src = url;
                             if (startFrom > 0) {
                                 const onLoadedMetadata = () => {
@@ -1524,46 +1397,13 @@ export default function WatchClient({
                         }
                     `}</style>
 
-                        {/* Native iOS / iPadOS Video Player */}
-                        {!isTrailerMode && !isEmbedServer && isAppleTouch && (
-                            <div className="w-full h-full absolute inset-0 z-0 bg-black flex items-center justify-center">
-                                <video
-                                    ref={nativeVideoRef}
-                                    key={videoSrc}
-                                    src={videoSrc}
-                                    controls
-                                    playsInline
-                                    webkit-playsinline="true"
-                                    x-webkit-airplay="allow"
-                                    poster={getImageUrl(movie.thumb_url, { width: 1280, quality: 85 })}
-                                    className="w-full h-full object-contain bg-black"
-                                    onTimeUpdate={handleNativeTimeUpdate}
-                                    onLoadedMetadata={handleNativeLoadedMetadata}
-                                    onEnded={handleNativeEnded}
-                                    onError={handleNativeError}
-                                >
-                                    {!hasCustomSubtitles && currentEpisode.link_vtt && (
-                                        <track
-                                            kind="captions"
-                                            label="Tiếng Việt"
-                                            srcLang="vi"
-                                            src={currentEpisode.link_vtt}
-                                            default
-                                        />
-                                    )}
-                                </video>
-                            </div>
-                        )}
+                        {/* HLS Video Container */}
+                        <div className={`w-full h-full absolute inset-0 z-0 ${isEmbedServer ? 'hidden' : 'block'}`}>
+                            <div ref={artContainerRef} className="w-full h-full"></div>
+                        </div>
 
-                        {/* HLS Video Container with Artplayer (Desktop / Android / macOS Non-Touch) */}
-                        {!isAppleTouch && (
-                            <div className={`w-full h-full absolute inset-0 z-0 ${isEmbedServer ? 'hidden' : 'block'}`}>
-                                <div ref={artContainerRef} className="w-full h-full"></div>
-                            </div>
-                        )}
-
-                        {/* Double-tap visual indicators (mobile/tablet Android only) */}
-                        {!isEmbedServer && !isAppleTouch && (
+                        {/* Double-tap visual indicators (mobile/tablet) */}
+                        {!isEmbedServer && (
                             <>
                                 {/* Tap ripples container */}
                                 <div className="absolute inset-0 z-10 pointer-events-none overflow-hidden">
@@ -1643,16 +1483,13 @@ export default function WatchClient({
                         {!isTrailerMode && isEmbedServer && embedSrc && (
                             <>
                                 <iframe
-                                    key={embedSrc}
                                     src={embedSrc}
                                     allowFullScreen
-                                    allow="accelerometer; autoplay; clipboard-write; encrypted-media; gyroscope; picture-in-picture; web-share; fullscreen"
-                                    referrerPolicy="origin"
                                     onLoad={() => setIsIframeLoading(false)}
                                     className="w-full h-full border-0 absolute inset-0 z-[5]"
                                 />
                                 {isIframeLoading && (
-                                    <div className="absolute inset-0 z-[200] bg-[#0F1115] flex flex-col items-center justify-center p-6 text-center transition-opacity duration-300 pointer-events-none">
+                                    <div className="absolute inset-0 z-[200] bg-[#0F1115] flex flex-col items-center justify-center p-6 text-center transition-opacity duration-300">
                                         <LoadingSpinner size="xl" className="mb-4 md:mb-6" />
                                         <div className="transition-all duration-500 delay-100">
                                             <h3 className="text-white text-md md:text-lg lg:text-xl font-bold tracking-tight mb-2">Đang kết nối Server...</h3>
