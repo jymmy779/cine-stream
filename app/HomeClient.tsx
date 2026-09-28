@@ -193,7 +193,7 @@ export default function HomeClient({ prefetched, activeEvent, initialTopics }: {
                 {/* 14. Hệ Tâm Linh (Kinh Dị) */}
                 <LazyRow id="poster-kinh-di" estimatedHeight="540px" skeleton={<MoviePosterRowSkeleton />}>
                     <MoviePosterRow
-                        title="Hệ tâm linh cực cháy"
+                        title="Tâm linh huyền bí "
                         apiUrl={`${INTERNAL_API_URL}/the-loai/kinh-di?exclude_trailer=true&limit=60`}
                         viewAllLink="/the-loai/kinh-di"
                         initialMovies={prefetched.posterKinhDi}
