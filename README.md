@@ -37,7 +37,7 @@
 - **Ghi nhớ tiến trình xem**: Tự động lưu mốc thời gian đang xem và tự động chuyển tiếp tập kế tiếp.
 
 ### ⚡ 2. Backend Nội Bộ & Crawler Tự Động (Self-Hosted Database & Auto-Sync)
-- **Kho dữ liệu 30.000+ phim độc lập**: Không phụ thuộc trực tiếp vào API bên thứ 3 từ phía Frontend.
+- **Kho dữ liệu 50.000+ phim độc lập**: Không phụ thuộc trực tiếp vào API bên thứ 3 từ phía Frontend.
 - **Cronjob ngầm (Background Worker)**: Tự động quét và cập nhật phim mới / tập phim mới mỗi 15 phút.
 - **Tìm kiếm thông minh (Smart Search Engine)**: Hỗ trợ tìm kiếm siêu tốc tiếng Việt có dấu, không dấu, chữ hoa/thường, tên gốc tiếng Anh và slug.
 
