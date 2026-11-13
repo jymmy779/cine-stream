@@ -96,8 +96,18 @@ lofilm/
 ├── next.config.ts             # Cấu hình Next.js
 └── package.json               # Cấu hình Frontend
 ```
-
 ---
+
+## Showcase
+![CineStream Homepage](./public/showcase/homepage.png)
+![CineStream Mobile Homepage](./public/showcase/mobile-homepage.png)
+![CineStream Detail Page](./public/showcase/detail-page.png)
+![CineStream Video Player](./public/showcase/video-player.png)
+![CineStream Search Page](./public/showcase/search-page.png)
+![CineStream Playlist](./public/showcase/playlist.png)
+![CineStream Dashboard](./public/showcase/dashboard.png)
+![CineStream GA4 1K Users](./public/showcase/ga4-1k-users.png)
+
 
 ## 🚀 Hướng dẫn cài đặt & Khởi chạy (Getting Started)
 
