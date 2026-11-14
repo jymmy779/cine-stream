@@ -25,7 +25,7 @@
 
 **LoFilm** là hệ thống xem phim trực tuyến toàn diện, hoạt động độc lập và tự chủ dữ liệu với kiến trúc **Full-Stack**:
 - **Frontend**: Xây dựng bằng **Next.js 16 (App Router)** và **React 19**, streaming SSR, tối ưu hóa tốc độ tải trang cực nhanh và giao diện Dark Cinema cao cấp.
-- **Backend & Crawler Service**: Dịch vụ Node.js / Express / Prisma chuyên trách lưu trữ hơn **30.000+ bộ phim**, hỗ trợ API nội bộ hiệu năng cao và **Cronjob tự động đồng bộ tập phim mới định kỳ mỗi 15 phút**.
+- **Backend & Crawler Service**: Dịch vụ Node.js / Express / Prisma chuyên trách lưu trữ hơn **50.000+ bộ phim**, hỗ trợ API nội bộ hiệu năng cao và **Cronjob tự động đồng bộ tập phim mới định kỳ mỗi 15 phút**.
 
 ---
 
