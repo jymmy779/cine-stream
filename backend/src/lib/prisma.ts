@@ -1,15 +1,35 @@
 import { PrismaClient } from "@prisma/client";
+import { PrismaLibSql } from "@prisma/adapter-libsql";
+import dotenv from "dotenv";
+
+dotenv.config();
 
 declare global {
   var prisma: PrismaClient | undefined;
   var isDbOptimized: boolean | undefined;
 }
 
-export const prisma =
-  global.prisma ||
-  new PrismaClient({
+function createPrismaClient(): PrismaClient {
+  const tursoUrl = process.env.TURSO_DATABASE_URL;
+  const tursoToken = process.env.TURSO_AUTH_TOKEN;
+
+  if (tursoUrl && tursoToken) {
+    const adapter = new PrismaLibSql({
+      url: tursoUrl,
+      authToken: tursoToken,
+    });
+    return new PrismaClient({
+      adapter,
+      log: process.env.NODE_ENV === "development" ? ["warn", "error"] : ["error"],
+    });
+  }
+
+  return new PrismaClient({
     log: process.env.NODE_ENV === "development" ? ["warn", "error"] : ["error"],
   });
+}
+
+export const prisma = global.prisma || createPrismaClient();
 
 if (process.env.NODE_ENV !== "production") {
   global.prisma = prisma;
@@ -23,13 +43,15 @@ export async function initDatabaseOptimizations(): Promise<void> {
 
   optimizationPromise = (async () => {
     try {
-      // 1. High Performance SQLite PRAGMAs
-      await prisma.$queryRawUnsafe(`PRAGMA journal_mode = WAL;`);
-      await prisma.$queryRawUnsafe(`PRAGMA synchronous = NORMAL;`);
-      await prisma.$queryRawUnsafe(`PRAGMA cache_size = -131072;`); // 128MB RAM Cache
-      await prisma.$queryRawUnsafe(`PRAGMA mmap_size = 536870912;`); // 512MB MMAP
-      await prisma.$queryRawUnsafe(`PRAGMA temp_store = MEMORY;`);
-      await prisma.$queryRawUnsafe(`PRAGMA busy_timeout = 10000;`);
+      // 1. High Performance SQLite PRAGMAs (Chỉ áp dụng khi chạy file SQLite local)
+      if (!process.env.TURSO_DATABASE_URL) {
+        await prisma.$queryRawUnsafe(`PRAGMA journal_mode = WAL;`).catch(() => {});
+        await prisma.$queryRawUnsafe(`PRAGMA synchronous = NORMAL;`).catch(() => {});
+        await prisma.$queryRawUnsafe(`PRAGMA cache_size = -131072;`).catch(() => {}); // 128MB RAM Cache
+        await prisma.$queryRawUnsafe(`PRAGMA mmap_size = 536870912;`).catch(() => {}); // 512MB MMAP
+        await prisma.$queryRawUnsafe(`PRAGMA temp_store = MEMORY;`).catch(() => {});
+        await prisma.$queryRawUnsafe(`PRAGMA busy_timeout = 10000;`).catch(() => {});
+      }
 
       // 2. High-speed Indexes
       await prisma.$executeRawUnsafe(`CREATE INDEX IF NOT EXISTS "Movie_tmdb_id_idx" ON "Movie"("tmdb_id");`);

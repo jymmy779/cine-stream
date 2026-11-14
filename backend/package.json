@@ -14,6 +14,8 @@
     "sync:cats": "tsx src/scripts/syncMissingCategories.ts"
   },
   "dependencies": {
+    "@libsql/client": "^0.18.0",
+    "@prisma/adapter-libsql": "^7.10.1",
     "@prisma/client": "^6.4.0",
     "axios": "^1.7.9",
     "cors": "^2.8.5",
