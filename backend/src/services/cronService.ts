@@ -64,13 +64,21 @@ export function toggleCron(source: SourceType = "all", enable?: boolean): boolea
  * Start background cron jobs (15 phút quét các nguồn đang BẬT)
  */
 export function startCronJobs() {
-  const schedule = process.env.SYNC_CRON_SCHEDULE || "*/15 * * * *";
+  if (process.env.ENABLE_CRON === "false" || process.env.ENABLE_CRON === "0") {
+    console.log("[Cron] Auto-sync is DISABLED via ENABLE_CRON env.");
+    return;
+  }
+
+  const schedule = process.env.SYNC_CRON_SCHEDULE || "0 */2 * * *";
 
   console.log(`[Cron] Auto-sync scheduled with frequency: "${schedule}"`);
 
-  syncTaxonomies().catch((err) =>
-    console.error("[Cron Init] Sync taxonomies error:", err.message)
-  );
+  // Chỉ chạy sync taxonomies local, trên Turso đã có sẵn taxonomies chuẩn
+  if (!process.env.TURSO_DATABASE_URL) {
+    syncTaxonomies().catch((err) =>
+      console.error("[Cron Init] Sync taxonomies error:", err.message)
+    );
+  }
 
   if (cronTask) {
     cronTask.stop();
@@ -108,7 +116,7 @@ export function startCronJobs() {
       for (const src of activeSources) {
         sourceCronState[src].last_run_time = nowIso;
         try {
-          const res = await syncIncremental(src, 2);
+          const res = await syncIncremental(src, 1);
           sourceCronState[src].last_run_result = res;
         } catch (err: any) {
           sourceCronState[src].last_run_result = { error: err.message };

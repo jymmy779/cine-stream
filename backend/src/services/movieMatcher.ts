@@ -153,7 +153,6 @@ export async function findMatchingMovieInDb(candidate: MatchCandidate): Promise<
   if (slug) {
     const exactSlugMovie = await prisma.movie.findUnique({
       where: { slug },
-      include: { episodes: { include: { server_data: true } } },
     });
     if (exactSlugMovie) return exactSlugMovie;
   }
@@ -163,7 +162,6 @@ export async function findMatchingMovieInDb(candidate: MatchCandidate): Promise<
     const tmdbIdStr = String(tmdb_id).trim();
     const tmdbMatch = await prisma.movie.findFirst({
       where: { tmdb_id: tmdbIdStr },
-      include: { episodes: { include: { server_data: true } } },
     });
     if (tmdbMatch) {
       console.log(`[MovieMatcher] Khớp Tầng 1 (TMDB ID: ${tmdbIdStr}): "${name}" -> DB: "${tmdbMatch.name}" (${tmdbMatch.slug})`);
@@ -187,7 +185,6 @@ export async function findMatchingMovieInDb(candidate: MatchCandidate): Promise<
           yearFilters.length > 0 ? { OR: yearFilters } : {},
         ],
       },
-      include: { episodes: { include: { server_data: true } } },
       take: 100,
     });
 
@@ -207,7 +204,6 @@ export async function findMatchingMovieInDb(candidate: MatchCandidate): Promise<
       where: {
         slug: { contains: rootSlug },
       },
-      include: { episodes: { include: { server_data: true } } },
       take: 20,
     });
 
