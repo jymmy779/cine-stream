@@ -53,95 +53,37 @@ export async function initDatabaseOptimizations(): Promise<void> {
         await prisma.$queryRawUnsafe(`PRAGMA busy_timeout = 10000;`).catch(() => {});
       }
 
-      // 2. High-speed Indexes
-      await prisma.$executeRawUnsafe(`CREATE INDEX IF NOT EXISTS "Movie_tmdb_id_idx" ON "Movie"("tmdb_id");`);
-      await prisma.$executeRawUnsafe(`CREATE INDEX IF NOT EXISTS "MovieCategory_category_id_movie_id_idx" ON "MovieCategory"("category_id", "movie_id");`);
-      await prisma.$executeRawUnsafe(`CREATE INDEX IF NOT EXISTS "MovieCountry_country_id_movie_id_idx" ON "MovieCountry"("country_id", "movie_id");`);
-
-      // 3. FTS5 Virtual Table for Instant Search
-      await prisma.$executeRawUnsafe(`
-        CREATE VIRTUAL TABLE IF NOT EXISTS movie_fts USING fts5(
-          id UNINDEXED,
-          name,
-          origin_name,
-          slug,
-          tokenize = 'unicode61 remove_diacritics 2'
-        );
-      `);
-
-      // 4. Triggers to maintain FTS5 in exact sync
-      await prisma.$executeRawUnsafe(`
-        CREATE TRIGGER IF NOT EXISTS movie_ai AFTER INSERT ON Movie BEGIN
-          INSERT INTO movie_fts(id, name, origin_name, slug) VALUES (new.id, new.name, coalesce(new.origin_name, ''), new.slug);
-        END;
-      `);
-      await prisma.$executeRawUnsafe(`
-        CREATE TRIGGER IF NOT EXISTS movie_ad AFTER DELETE ON Movie BEGIN
-          DELETE FROM movie_fts WHERE id = old.id;
-        END;
-      `);
-      await prisma.$executeRawUnsafe(`
-        CREATE TRIGGER IF NOT EXISTS movie_au AFTER UPDATE ON Movie BEGIN
-          DELETE FROM movie_fts WHERE id = old.id;
-          INSERT INTO movie_fts(id, name, origin_name, slug) VALUES (new.id, new.name, coalesce(new.origin_name, ''), new.slug);
-        END;
-      `);
-
-      // Check FTS population and deduplicate if count differs
-      const ftsCountRes: any = await prisma.$queryRawUnsafe(`SELECT count(*) as count FROM movie_fts;`);
-      const ftsCount = Number(ftsCountRes[0]?.count || 0);
-      const movieCount = await prisma.movie.count();
-
-      if (ftsCount !== movieCount) {
-        console.log(`[FTS5] Rebuilding / Syncing search index (${ftsCount} vs ${movieCount} movies)...`);
-        await prisma.$executeRawUnsafe(`DELETE FROM movie_fts;`);
-        await prisma.$executeRawUnsafe(`
-          INSERT INTO movie_fts(id, name, origin_name, slug)
-          SELECT id, name, coalesce(origin_name, ''), slug 
-          FROM Movie;
-        `);
-        console.log(`✅ [FTS5] Search index rebuilt cleanly with ${movieCount} movies.`);
+      // 2. High-speed Indexes (Chỉ chạy local SQLite, Turso đã có sẵn index)
+      if (!process.env.TURSO_DATABASE_URL) {
+        await prisma.$executeRawUnsafe(`CREATE INDEX IF NOT EXISTS "Movie_tmdb_id_idx" ON "Movie"("tmdb_id");`).catch(() => {});
+        await prisma.$executeRawUnsafe(`CREATE INDEX IF NOT EXISTS "MovieCategory_category_id_movie_id_idx" ON "MovieCategory"("category_id", "movie_id");`).catch(() => {});
+        await prisma.$executeRawUnsafe(`CREATE INDEX IF NOT EXISTS "MovieCountry_country_id_movie_id_idx" ON "MovieCountry"("country_id", "movie_id");`).catch(() => {});
       }
 
-      // 5. Chuẩn hóa danh mục thể loại (Đảm bảo 29 thể loại chuẩn, xóa mục trùng 'tre-em')
-      const standardCategories = [
-        { name: 'Bí Ẩn', slug: 'bi-an' },
-        { name: 'Chiến Tranh', slug: 'chien-tranh' },
-        { name: 'Chính Kịch', slug: 'chinh-kich' },
-        { name: 'Cổ Trang', slug: 'co-trang' },
-        { name: 'Gia Đình', slug: 'gia-dinh' },
-        { name: 'Giật Gân', slug: 'giat-gan' },
-        { name: 'Hoạt Hình', slug: 'hoat-hinh' },
-        { name: 'Hài Hước', slug: 'hai-huoc' },
-        { name: 'Hành Động', slug: 'hanh-dong' },
-        { name: 'Hình Sự', slug: 'hinh-su' },
-        { name: 'Học Đường', slug: 'hoc-duong' },
-        { name: 'Khoa Học', slug: 'khoa-hoc' },
-        { name: 'Kinh Dị', slug: 'kinh-di' },
-        { name: 'Kinh Điển', slug: 'kinh-dien' },
-        { name: 'Lịch Sử', slug: 'lich-su' },
-        { name: 'Miền Tây', slug: 'mien-tay' },
-        { name: 'Phim 18+', slug: 'phim-18' },
-        { name: 'Phim Ngắn', slug: 'phim-ngan' },
-        { name: 'Phiêu Lưu', slug: 'phieu-luu' },
-        { name: 'Thiếu Nhi', slug: 'thieu-nhi' },
-        { name: 'Thần Thoại', slug: 'than-thoai' },
-        { name: 'Thể Thao', slug: 'the-thao' },
-        { name: 'Tiên Hiệp', slug: 'tien-hiep' },
-        { name: 'Tài Liệu', slug: 'tai-lieu' },
-        { name: 'Tâm Lý', slug: 'tam-ly' },
-        { name: 'Tình Cảm', slug: 'tinh-cam' },
-        { name: 'Viễn Tưởng', slug: 'vien-tuong' },
-        { name: 'Võ Thuật', slug: 'vo-thuat' },
-        { name: 'Âm Nhạc', slug: 'am-nhac' },
-      ];
-      await prisma.category.deleteMany({ where: { slug: 'tre-em' } });
-      for (const cat of standardCategories) {
-        await prisma.category.upsert({
-          where: { slug: cat.slug },
-          update: { name: cat.name },
-          create: { name: cat.name, slug: cat.slug },
-        });
+      // 3. FTS5 + Triggers + Category normalization: Chỉ chạy local, KHÔNG chạy trên Turso
+      // Lý do: FTS5 trên Turso tốn hàng triệu rows read mỗi lần server khởi động
+      if (!process.env.TURSO_DATABASE_URL) {
+        await prisma.$executeRawUnsafe(`
+          CREATE VIRTUAL TABLE IF NOT EXISTS movie_fts USING fts5(
+            id UNINDEXED, name, origin_name, slug,
+            tokenize = 'unicode61 remove_diacritics 2'
+          );
+        `).catch(() => {});
+
+        await prisma.$executeRawUnsafe(`CREATE TRIGGER IF NOT EXISTS movie_ai AFTER INSERT ON Movie BEGIN INSERT INTO movie_fts(id, name, origin_name, slug) VALUES (new.id, new.name, coalesce(new.origin_name, ''), new.slug); END;`).catch(() => {});
+        await prisma.$executeRawUnsafe(`CREATE TRIGGER IF NOT EXISTS movie_ad AFTER DELETE ON Movie BEGIN DELETE FROM movie_fts WHERE id = old.id; END;`).catch(() => {});
+        await prisma.$executeRawUnsafe(`CREATE TRIGGER IF NOT EXISTS movie_au AFTER UPDATE ON Movie BEGIN DELETE FROM movie_fts WHERE id = old.id; INSERT INTO movie_fts(id, name, origin_name, slug) VALUES (new.id, new.name, coalesce(new.origin_name, ''), new.slug); END;`).catch(() => {});
+
+        const ftsCountRes: any = await prisma.$queryRawUnsafe(`SELECT count(*) as count FROM movie_fts;`).catch(() => [{ count: 0 }]);
+        const ftsCount = Number((ftsCountRes as any)[0]?.count || 0);
+        const movieCount = await prisma.movie.count();
+        if (ftsCount !== movieCount) {
+          await prisma.$executeRawUnsafe(`DELETE FROM movie_fts;`).catch(() => {});
+          await prisma.$executeRawUnsafe(`INSERT INTO movie_fts(id, name, origin_name, slug) SELECT id, name, coalesce(origin_name, ''), slug FROM Movie;`).catch(() => {});
+        }
+
+        // Chuẩn hóa danh mục thể loại (chỉ cần 1 lần lúc dev local)
+        await prisma.category.deleteMany({ where: { slug: 'tre-em' } }).catch(() => {});
       }
 
       global.isDbOptimized = true;
